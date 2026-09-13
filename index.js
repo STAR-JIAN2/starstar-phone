@@ -1,8 +1,7 @@
 /* ============================================================
- * 星宝的小手机 · index.js  (v0.12.0)
- * 修复：语音模板截断 / 我方组件嵌套 / 撤回带头像 / 表情面板错乱
- *       小窗看不到(可拖拽+视口内定位) / 删除单条 / 逐条延迟弹
- *       在线状态 / AI 复述用户消息 / 全局开关
+ * 星宝的小手机 · SillyTavern 扩展
+ * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
+ * v0.12.0
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -12,7 +11,7 @@ const MEM_MARKER = '📱手机记忆';           // 世界书里那条固定条�
 const DEFAULT_CHAR_AVATAR = 'https://card-site-c1a.pages.dev/api/file/media/2026-09-11/5d35a7b2-4d6d-4faa-ad9f-55e3d1db3608.png';
 const DEFAULT_USER_AVATAR = 'https://cdn.imgos.cn/vip/2026/01/15/6968e2c3734e9.png';
 const DEFAULT_WALLPAPER = 'https://free.picui.cn/free/20260610/0b069700b5e8e5a78a3e61c7b9bb0269.png';
-const DEFAULT_NPC_AVATAR = 'https://cdn.imgos.cn/vip/2026/02/01/697f0415ae31e.png';
+const DEFAULT_NPC_AVATAR = 'https://card-site-c1a.pages.dev/api/file/media/2026-09-11/5d35a7b2-4d6d-4faa-ad9f-55e3d1db3608.png';
 
 const CONTACTS_KEY = 'tp_contacts';       // 联系人列表（按本轮聊天隔离，和手机聊天一致）
 const CHATS_KEY = 'tp_chats';             // { 联系人id: [消息] }
@@ -1423,11 +1422,11 @@ function buildPanelHTML() {
                     <div class="action-bar">
                       ${menuBtn('voice', '语音 / 撤回', [{ label: '🎙️ 语音', tpl: '[语音：8"|这里写语音内容]' }, { label: '👻 撤回', tpl: '[撤回：这里写撤回内容]' }])}
                       ${codeBtn('link', '[链接：标题|描述]', '链接')}
-                      ${menuBtn('food', '外卖 / 代付', [{ label: '🍱 为TA点', tpl: '[外卖：菜名|已买单]' }, { label: '💳 请代付', tpl: '[代付：商品|¥38.00]' }])}
-                      ${menuBtn('transfer', '转账 / 红包', [{ label: '🧧 转账', tpl: '[转账：520|拿去花]' }, { label: '💰 收款', tpl: '[转账：520|收下啦|收]' }, { label: '↩️ 退回', tpl: '[转账：520|退回|退]' }])}
+                      ${menuBtn('food', '外卖 / 代付', [{ label: '🍱 为TA点', tpl: '[外卖：点单内容|已买单]' }, { label: '💳 请代付', tpl: '[代付：点单内容|这里写金额 如：¥38.00]' }])}
+                      ${menuBtn('transfer', '转账 / 红包', [{ label: '🧧 转账', tpl: '[转账：金额|备注]' }, { label: '💰 收款', tpl: '[转账：金额|备注|收]' }, { label: '↩️ 退回', tpl: '[转账：金额|备注|退]' }])}
                       ${codeBtn('image', '[图片：这里写图片描述]', '图片')}
-                      ${codeBtn('location', '[定位：1.2km|正在靠近你]', '定位')}
-                      ${codeBtn('weather', '[天气：晴转多云|记得带伞]', '天气')}
+                      ${codeBtn('location', '[定位：距离xxkm|正在靠近你]', '定位')}
+                      ${codeBtn('weather', '[天气：这里写天气情况，如：晴转多云|这里写备注，如：记得带伞]', '天气')}
                       <div class="action-img-btn" id="tp-emoji-btn" data-ico="sticker" title="表情">${ico('sticker')}</div>
                     </div>
                     <div class="input-wrapper"><input class="input-box" id="tp-input" placeholder="打字，回车发一条…"><div class="send-img-btn" id="tp-send" title="让TA回复">➤</div></div>
@@ -1494,7 +1493,7 @@ function buildPanelHTML() {
                 <div class="tp-set-group"><label class="tp-set-label">字体</label><select class="tp-set-input" id="tp-set-font"><option value="default">默认</option><option value="xiaolai">小赖字体</option><option value="round">圆润</option></select></div>
                 <div class="tp-mem-divider">🎀 功能区图标 · 留空就用自带的</div>
                 ${Object.keys(ACTION_ICONS).map(k => `<div class="tp-set-group tp-ico-row"><span class="tp-ico-prev" data-ico="${k}">${ico(k)}</span><input class="tp-set-input" id="tp-ico-${k}" placeholder="${esc(ACTION_ICON_LABELS[k])} 的图片链接"></div>`).join('')}
-                <div class="tp-mem-divider">🎴 打包进角色卡 · 让别人玩你的卡时自带这套设定</div>
+                <div class="tp-mem-divider">🎴 打包进角色卡</div>
                 <div class="tp-set-group">
                   <div class="tp-mem-status" id="tp-card-status"></div>
                   <button class="tp-mem-btn" id="tp-card-save">把手机设定写进这张卡</button>
@@ -1530,7 +1529,7 @@ function buildPanelHTML() {
           </div>
           <div class="tp-nav">
             <div class="tp-nav-item active" data-tab="chat"><span class="tp-nav-ico">💬</span>聊天</div>
-            <div class="tp-nav-item" data-tab="moments"><span class="tp-nav-ico">🌸</span>朋友圈</div>
+            <div class="tp-nav-item" data-tab="moments"><span class="tp-nav-ico">🐶</span>朋友圈</div>
             <div class="tp-nav-item" data-tab="settings"><span class="tp-nav-ico">⚙️</span>设置</div>
           </div>
         </div>
