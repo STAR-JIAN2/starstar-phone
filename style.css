@@ -1,0 +1,367 @@
+/* ============================================================
+   星宝的小手机 · style.css  (v0.12.0)
+   ============================================================ */
+
+@font-face {
+    font-family: 'XiaoLai';
+    src: url('https://s3plus.meituan.net/opapisdk/op_ticket_885190757_1759033987769_qdqqd_vyi3iv.ttf') format('truetype');
+    font-display: swap;
+}
+
+.tp-root .reply-btn { flex-shrink: 0; height: 30px; padding: 0 12px; border-radius: 15px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: #fff; font-size: 12px; font-weight: bold; font-family: 'XiaoLai', sans-serif; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 6px rgba(255,154,158,0.4); white-space: nowrap; }
+
+.tp-root .transfer-card-preview { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(255, 154, 158, 0.3); box-shadow: 0 4px 10px rgba(255, 154, 158, 0.15); }
+.tp-root .transfer-icon-box { width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #fff; flex-shrink: 0; box-shadow: 0 2px 6px rgba(255, 154, 158, 0.4); }
+.tp-root .transfer-card-preview.status-received .transfer-icon-box { background: #E0E0E0; color: #999; box-shadow: none; }
+.tp-root .transfer-card-preview.status-received .transfer-status { background: rgba(76, 175, 80, 0.1); color: #4CAF50; }
+.tp-root .transfer-card-preview.status-returned .transfer-icon-box { background: #F5F5F5; color: #BDBDBD; box-shadow: none; text-decoration: line-through; }
+.tp-root .transfer-card-preview.status-returned .transfer-status { background: rgba(255, 107, 107, 0.1); color: #FF6B6B; }
+.tp-root .transfer-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.tp-root .transfer-title { font-family: 'XiaoLai', sans-serif; font-size: 13px; font-weight: 600; color: #7F7F7F; }
+.tp-root .transfer-amount { font-family: 'XiaoLai', sans-serif; font-size: 15px; color: #FF6B6B; font-weight: bold; margin-top: 2px; }
+.tp-root .transfer-desc { font-size: 10px; color: #999; margin-top: 2px; }
+.tp-root .transfer-status { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(255, 107, 107, 0.1); color: #FF6B6B; }
+
+/* 每条消息容器 */
+.tp-root .tp-line { position: relative; display: flex; margin-bottom: 16px; }
+.tp-root .tp-line.center { justify-content: center; }
+.tp-root .msg-row { align-items: flex-start; gap: 7px; max-width: 88%; }
+.tp-root .msg-row.left { align-self: flex-start; margin-right: auto; }
+.tp-root .msg-row.right { align-self: flex-end; margin-left: auto; flex-direction: row-reverse; }
+.tp-root .msg-inner { display: flex; min-width: 0; }
+.tp-root .avatar { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.15); object-fit: cover; flex-shrink: 0; margin-top: 2px; }
+
+/* 删除单条按钮 */
+.tp-root .tp-del { position: absolute; top: -6px; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,90,95,0.92); color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity 0.15s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 5; }
+.tp-root .tp-line.right .tp-del { left: -6px; }
+.tp-root .tp-line.left .tp-del { right: -6px; }
+.tp-root .tp-line.center .tp-del { right: 4px; top: 50%; transform: translateY(-50%); }
+.tp-root .tp-line:hover .tp-del { opacity: 1; }
+
+.tp-root .bubble { padding: 8px 15px; border-radius: 22px; font-size: 15px; line-height: 1.4; white-space: pre-wrap; box-shadow: 0 4px 6px rgba(0,0,0,0.14), 0 1px 3px rgba(0,0,0,0.1); max-width: 100%; word-break: break-word; }
+.tp-root .bubble-blue { background: rgba(245, 253, 255, 0.92); color: #6C7275; }
+.tp-root .bubble-pink { background: rgba(255, 245, 245, 0.92); color: #6C7275; }
+
+/* 表情裸放 */
+.tp-root img.sticker-img { max-width: 96px; max-height: 96px; display: block; }
+
+/* 旁白 */
+.tp-root .tp-narration { max-width: 88%; margin: 0 auto; font-family: 'XiaoLai', sans-serif; font-size: 12px; line-height: 1.6; color: #9a8f92; text-align: center; font-style: italic; padding: 4px 12px; }
+.tp-root .tp-narration::before { content: '「'; opacity: 0.5; }
+.tp-root .tp-narration::after { content: '」'; opacity: 0.5; }
+
+/* 撤回：居中、无头像 */
+.tp-root .tp-recall { display: flex; justify-content: center; width: 100%; }
+.tp-root .recall-wrapper summary { list-style: none; cursor: pointer; outline: none; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.tp-root .recall-wrapper summary::-webkit-details-marker { display: none; }
+.tp-root .system-tip { font-size: 11px; color: #9a9a9a; background: rgba(0,0,0,0.045); padding: 4px 12px; border-radius: 10px; }
+.tp-root .tip-hint { font-size: 9px; opacity: 0.55; margin-left: 2px; }
+.tp-root .ghost-bubble { margin-top: 6px; font-size: 12px; color: #888; background: rgba(255,255,255,0.5); border: 1px dashed #ccc; padding: 6px 12px; border-radius: 8px; text-decoration: line-through; }
+
+/* typing */
+.tp-root .tp-typing .dots { display: inline-flex; gap: 4px; padding: 10px 14px; border-radius: 18px; background: rgba(245, 253, 255, 0.92); box-shadow: 0 4px 6px rgba(0,0,0,0.12); }
+.tp-root .tp-typing .dots span { width: 6px; height: 6px; border-radius: 50%; background: #b7c4c7; animation: tp-blink 1.2s infinite ease-in-out; }
+.tp-root .tp-typing .dots span:nth-child(2) { animation-delay: 0.2s; }
+.tp-root .tp-typing .dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes tp-blink { 0%,80%,100% { opacity: 0.3; transform: translateY(0);} 40% { opacity: 1; transform: translateY(-3px);} }
+
+/* 语音 */
+.tp-root .voice-bubble-container { display: flex; flex-direction: column; max-width: 100%; min-width: 75px; }
+.tp-root .voice-bubble-container.right-align { align-items: flex-end; }
+.tp-root .voice-bubble-container > summary { list-style: none; cursor: pointer; outline: none; }
+.tp-root .voice-bubble-container > summary::-webkit-details-marker { display: none; }
+.tp-root .voice-bar { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-radius: 17px; width: 105px; height: 34px; box-sizing: border-box; box-shadow: 0 4px 6px rgba(0,0,0,0.14), 0 1px 3px rgba(0,0,0,0.1); gap: 7px; }
+.tp-root .voice-duration { font-size: 12px; opacity: 0.8; font-weight: 500; }
+.tp-root .play-triangle { width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 8px solid #6C7275; opacity: 0.9; flex-shrink: 0; }
+.tp-root .voice-wave-box { display: flex; align-items: center; gap: 3px; height: 100%; flex: 1; justify-content: center; }
+.tp-root .wave-bar { display: block; width: 3px; background-color: #6C7275; border-radius: 2px; animation: tp-wave 1.2s infinite ease-in-out; }
+@keyframes tp-wave { 0%, 100% { height: 4px; opacity: 0.6; } 50% { height: 15px; opacity: 1; } }
+.tp-root .wave-bar:nth-child(1) { animation-delay: 0s; height: 6px; }
+.tp-root .wave-bar:nth-child(2) { animation-delay: 0.2s; height: 10px; }
+.tp-root .wave-bar:nth-child(3) { animation-delay: 0.4s; height: 8px; }
+.tp-root .voice-text { margin-top: 5px; padding: 7px 11px; border-radius: 15px; font-size: 12px; line-height: 1.4; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-width: 100%; word-wrap: break-word; }
+
+/* 卡片 */
+.tp-root .link-card-container { display: flex; flex-direction: column; max-width: 210px; min-width: 170px; }
+.tp-root .link-card-container > summary { list-style: none; cursor: pointer; outline: none; }
+.tp-root .link-card-container > summary::-webkit-details-marker { display: none; }
+.tp-root .frosted-glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.45); }
+.tp-root .frosted-glass-pink { background: rgba(255, 245, 245, 0.72); backdrop-filter: blur(10px); border: 1px solid rgba(255, 245, 245, 0.55); }
+.tp-root .link-card-preview { display: flex; align-items: center; gap: 9px; padding: 9px; border-radius: 11px; box-shadow: 0 4px 8px rgba(0,0,0,0.08); }
+.tp-root .link-icon-box { width: 38px; height: 38px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0; }
+.tp-root .frosted-icon-bg, .tp-root .frosted-icon-bg-pink { background: rgba(255,255,255,0.5); }
+.tp-root .link-info { flex: 1; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+.tp-root .link-title { font-size: 13px; font-weight: 500; color: #747B7C; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.tp-root .link-desc { font-size: 10px; color: #888; }
+.tp-root .link-content { margin-top: 6px; border-radius: 11px; overflow: hidden; box-shadow: 0 6px 12px rgba(0,0,0,0.1); }
+.tp-root .link-content-inner { display: flex; flex-direction: column; padding: 14px 11px; }
+.tp-root .link-meta { font-size: 10px; color: #888; display: flex; justify-content: space-between; border-top: 1px dashed rgba(0,0,0,0.1); padding-top: 7px; }
+.tp-root .text-center { align-items: center; text-align: center; }
+.tp-root .image-placeholder { width: 100%; height: 90px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #555; margin-bottom: 9px; }
+.tp-root .custom-bg { background-image: url('https://cdn.imgos.cn/vip/2026/02/04/6983044dcafc8.png'); background-size: cover; background-position: center; }
+.tp-root .img-text { font-size: 11px; }
+.tp-root .map-placeholder { width: 100%; padding: 9px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+.tp-root .radar-circle { width: 55px; height: 55px; border: 1px solid rgba(255, 143, 171, 0.5); border-radius: 50%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); animation: tp-pulse 2s infinite; }
+.tp-root .radar-dot { width: 7px; height: 7px; background: #ff8fab; border-radius: 50%; margin-bottom: 9px; box-shadow: 0 0 10px rgba(255, 143, 171, 0.8); z-index: 2; }
+.tp-root .map-text { font-size: 13px; font-weight: 700; color: #444; margin-top: 22px; }
+.tp-root .map-subtext { font-size: 10px; color: #777; margin-top: 2px; }
+@keyframes tp-pulse { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
+.tp-root .weather-widget { text-align: center; padding: 5px; }
+.tp-root .weather-main { display: flex; align-items: center; justify-content: center; gap: 7px; margin-bottom: 5px; }
+.tp-root .weather-icon { font-size: 26px; }
+.tp-root .weather-temp { font-size: 20px; font-weight: 700; color: #333; }
+.tp-root .weather-desc { font-size: 11px; color: #666; margin-bottom: 7px; }
+.tp-root .weather-tips { font-size: 10px; color: #555; background: rgba(255,255,255,0.4); padding: 5px 9px; border-radius: 9px; font-style: italic; }
+.tp-root .food-emoji { font-size: 36px; margin-bottom: 5px; }
+.tp-root .order-name { font-size: 13px; color: #444; font-weight: 600; margin-bottom: 4px; line-height: 1.4; }
+.tp-root .order-price { font-size: 22px; color: #333; font-weight: 800; margin-bottom: 11px; }
+.tp-root .order-status-tag { display: inline-block; padding: 4px 9px; border-radius: 11px; font-size: 10px; font-weight: bold; }
+.tp-root .paid { background: rgba(76, 175, 80, 0.15); color: #2E7D32; border: 1px solid rgba(76, 175, 80, 0.2); }
+.tp-root .action-btn { background: linear-gradient(135deg, #333 0%, #555 100%); color: white; padding: 7px 18px; border-radius: 18px; font-size: 12px; font-weight: 600; display: inline-block; }
+
+@keyframes tp-fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* 手机壳 */
+.tp-root .cute-phone-container { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: auto; height: auto; margin: 0; border-radius: 30px; overflow: hidden; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; border: 10px solid #FFF0F0; box-sizing: border-box; }
+.tp-root .content-layer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: auto; height: auto; z-index: 1; display: flex; flex-direction: column; border-radius: 20px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1) inset; }
+.tp-root .wallpaper-layer { position: absolute; inset: 0; background-image: url('https://free.picui.cn/free/20260610/0b069700b5e8e5a78a3e61c7b9bb0269.png'); background-size: cover; background-position: center; z-index: 0; }
+.tp-root .content-layer > * { position: relative; z-index: 1; }
+.tp-root .phone-header { height: 54px; position: relative; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.05); flex-shrink: 0; }
+.tp-root .blur-overlay { position: absolute; inset: 0; background-image: url('https://cdn.imgos.cn/vip/2026/01/20/696f2b238244a.png'); background-size: cover; background-position: center; pointer-events: none; }
+.tp-root .blur-overlay::after { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(1px); }
+.tp-root .header-content { position: relative; z-index: 2; height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+.tp-root .header-mid { flex: 1; min-width: 0; padding: 0 6px; }
+.tp-root .contact-name { font-family: 'XiaoLai', cursive; font-size: 16px; font-weight: 700; color: #6C7275; text-align: center; text-shadow: 0 1px 1px rgba(255,255,255,0.8); }
+.tp-root .contact-status { font-size: 9px; color: #2E7D32; text-align: center; margin-top: 2px; }
+.tp-root .header-btn { font-size: 20px; color: #6C7275; cursor: pointer; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.15s; }
+.tp-root .header-btn:hover { background: rgba(255,255,255,0.5); }
+
+.tp-root .tp-pages { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
+.tp-root .tp-page { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; flex-direction: column; }
+.tp-root .tp-sub { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; flex-direction: column; }
+.tp-root .tp-sub.active { display: flex; }
+.tp-root .tp-page.active { display: flex; }
+.tp-root .chat-area { flex: 1; position: relative; overflow-y: auto; padding: 18px 9px; display: flex; flex-direction: column; scrollbar-width: none; }
+.tp-root .chat-area::-webkit-scrollbar { display: none; }
+
+.tp-root .phone-footer { position: relative; z-index: 20; box-shadow: 0 -4px 15px rgba(0,0,0,0.05); flex-shrink: 0; }
+.tp-root .footer-content { position: relative; z-index: 2; padding: 7px 11px 10px 11px; }
+.tp-root .action-bar { display: flex; justify-content: space-between; margin-bottom: 9px; padding: 0 2px; position: relative; }
+.tp-root .action-img-btn { width: 26px; height: 26px; cursor: pointer; transition: transform 0.15s; opacity: 0.92; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.tp-root .action-img-btn:hover { transform: scale(1.15); opacity: 1; }
+.tp-root .action-img-btn img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; border-radius: 7px; }
+.tp-root .tp-ico-svg { width: 22px; height: 22px; color: #ff8fab; }
+.tp-root .input-wrapper { display: flex; gap: 7px; align-items: center; }
+.tp-root .input-box { font-family: 'XiaoLai', cursive; flex: 1; background: rgba(255, 255, 255, 0.8); height: 32px; border-radius: 8px; padding: 0 11px; font-size: 13px; color: #555; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); border: 1px solid rgba(255,255,255,0.6); outline: none; box-sizing: border-box; }
+.tp-root .send-img-btn { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 6px rgba(255,154,158,0.4); background: linear-gradient(135deg,#ff9a9e,#fecfef); color: #fff; font-size: 15px; flex-shrink: 0; }
+.tp-root .send-img-btn:active { transform: scale(0.94); }
+
+/* 点击式菜单 */
+.tp-root .menu-anchor { position: relative; }
+.tp-root .menu-pop { display: none; position: absolute; bottom: 135%; left: 50%; transform: translateX(-50%); min-width: 96px; flex-direction: column; background: rgba(255, 255, 255, 0.94); border-radius: 12px; padding: 6px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.14); z-index: 60; border: 1px solid rgba(255, 255, 255, 0.6); backdrop-filter: blur(10px); }
+.tp-root .menu-pop.open { display: flex; }
+.tp-root .menu-item { font-size: 11px; color: #444; padding: 6px 8px; text-align: center; cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.tp-root .menu-item:hover { background: rgba(255, 143, 171, 0.15); color: #FF6B6B; }
+.tp-root .menu-sep { height: 1px; background: rgba(0, 0, 0, 0.06); margin: 2px 4px; }
+
+/* 表情抽屉：并排网格 */
+.tp-root .tp-emoji-drawer { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 210px; background: rgba(255, 255, 255, 0.97); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 20px rgba(0,0,0,0.14); z-index: 40; padding: 12px; box-sizing: border-box; flex-direction: column; }
+.tp-root .tp-emoji-drawer.open { display: flex; animation: tp-slideUp 0.2s ease-out; }
+@keyframes tp-slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.tp-root .tp-emoji-drawer .hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-shrink: 0; }
+.tp-root .tp-emoji-drawer .hd .t { font-family: 'XiaoLai', sans-serif; font-size: 12px; color: #8a7f82; }
+.tp-root .tp-emoji-drawer .hd .x { cursor: pointer; color: #b0a5a8; font-size: 16px; }
+.tp-root .tp-emoji-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(5, 1fr); grid-auto-rows: 54px; gap: 8px; align-content: start; scrollbar-width: none; }
+.tp-root .tp-emoji-grid::-webkit-scrollbar { display: none; }
+.tp-root .tp-emoji-cell { width: 100%; height: 54px; border-radius: 8px; overflow: hidden; cursor: pointer; background: rgba(255,255,255,0.5); transition: transform 0.1s; }
+.tp-root .tp-emoji-cell:hover { transform: scale(1.08); }
+.tp-root .tp-emoji-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* 底部导航 */
+.tp-root .tp-nav { display: flex; position: relative; z-index: 30; flex-shrink: 0; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,0.5); }
+.tp-root .tp-nav-item { flex: 1; text-align: center; padding: 7px 0 9px 0; font-family: 'XiaoLai', sans-serif; font-size: 11px; color: #b0a5a8; cursor: pointer; }
+.tp-root .tp-nav-item .tp-nav-ico { font-size: 16px; display: block; margin-bottom: 2px; }
+.tp-root .tp-nav-item.active { color: #ff8fab; }
+
+/* 设置页 */
+.tp-root .tp-settings { flex: 1; overflow-y: auto; padding: 16px 18px; scrollbar-width: none; }
+.tp-root .tp-settings::-webkit-scrollbar { display: none; }
+.tp-root .tp-set-group { margin-bottom: 15px; }
+.tp-root .tp-set-label { font-family: 'XiaoLai', sans-serif; font-size: 12px; color: #8a7f82; margin-bottom: 6px; display: block; }
+.tp-root .tp-set-input { width: 100%; height: 34px; border-radius: 9px; border: 1px solid rgba(255,143,171,0.4); padding: 0 10px; font-size: 12px; color: #555; box-sizing: border-box; background: rgba(255,255,255,0.85); outline: none; font-family: 'XiaoLai', cursive; }
+.tp-root .tp-set-input:focus { border-color: #ff8fab; }
+.tp-root .tp-set-row { display: flex; align-items: center; justify-content: space-between; }
+.tp-root .tp-switch { width: 44px; height: 24px; border-radius: 12px; background: #e0d7da; position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+.tp-root .tp-switch.on { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
+.tp-root .tp-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: left 0.2s; }
+.tp-root .tp-switch.on::after { left: 22px; }
+.tp-root .tp-save-btn { width: 100%; height: 36px; border-radius: 18px; border: none; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: #fff; font-family: 'XiaoLai', sans-serif; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(255,154,158,0.35); margin-top: 4px; }
+.tp-root .tp-hint { font-size: 10px; color: #b0a5a8; margin-top: 8px; line-height: 1.5; }
+.tp-root .tp-mem-divider { font-family: 'XiaoLai', sans-serif; font-size: 11px; color: #ff8fab; text-align: center; margin: 6px 0 14px; padding-top: 12px; border-top: 1px dashed rgba(255,143,171,0.35); }
+.tp-root .tp-mem-status { font-size: 10px; color: #a89ca0; line-height: 1.5; white-space: pre-wrap; background: rgba(255,255,255,0.55); border: 1px solid rgba(255,143,171,0.25); border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; }
+.tp-root .tp-mem-btn { width: 100%; height: 32px; border-radius: 16px; border: 1px solid rgba(255,143,171,0.55); background: rgba(255,255,255,0.7); color: #ff7a9c; font-family: 'XiaoLai', sans-serif; font-size: 12px; font-weight: bold; cursor: pointer; }
+.tp-root .tp-mem-btn:active { background: rgba(255,143,171,0.15); }
+
+/* ---- 自定义表情管理 ---- */
+.tp-root .tp-sticker-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.tp-root .tp-sticker-empty { font-size: 10px; color: #b0a5a8; padding: 4px 0; }
+.tp-root .tp-sticker-item { position: relative; width: 52px; text-align: center; }
+.tp-root .tp-sticker-item img { width: 44px; height: 44px; object-fit: cover; border-radius: 10px; background: rgba(255,255,255,0.6); border: 1px solid rgba(255,143,171,0.25); }
+.tp-root .tp-sticker-name { display: block; font-size: 9px; color: #a89ca0; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-root .tp-sticker-del { position: absolute; top: -6px; right: 2px; width: 16px; height: 16px; line-height: 15px; text-align: center; border-radius: 50%; background: #ff8fab; color: #fff; font-size: 10px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.tp-root .tp-sticker-in { margin-bottom: 8px; }
+
+/* ---- 朋友圈 ---- */
+.tp-root .tp-moments { flex: 1; overflow-y: auto; scrollbar-width: none; background: #f6f2f3; }
+.tp-root .tp-moments::-webkit-scrollbar { display: none; }
+.tp-root .tp-mom-cover { position: relative; height: 150px; overflow: hidden; }
+.tp-root .tp-mom-cover-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tp-root .tp-mom-cover-mask { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.28)); }
+.tp-root .tp-mom-tools { position: absolute; top: 10px; right: 12px; display: flex; gap: 8px; }
+.tp-root .tp-mom-tool { min-width: 26px; height: 26px; padding: 0 8px; border-radius: 13px; background: rgba(0,0,0,0.32); color: #fff; font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(4px); }
+.tp-root .tp-mom-tool:active { background: rgba(255,143,171,0.85); }
+.tp-root .tp-mom-me { position: absolute; right: 14px; bottom: -22px; display: flex; align-items: flex-end; gap: 8px; }
+.tp-root .tp-mom-me-name { color: #fff; font-family: 'XiaoLai', sans-serif; font-size: 13px; text-shadow: 0 1px 3px rgba(0,0,0,0.5); margin-bottom: 26px; }
+.tp-root .tp-mom-me-av { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.tp-root .tp-mom-feed { padding: 34px 14px 20px; }
+.tp-root .tp-mom-empty { text-align: center; color: #b0a5a8; font-size: 12px; line-height: 1.8; padding: 30px 0; }
+.tp-root .tp-mom-post { display: flex; gap: 10px; padding: 14px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.tp-root .tp-mom-av { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.tp-root .tp-mom-body { flex: 1; min-width: 0; }
+.tp-root .tp-mom-name { font-family: 'XiaoLai', sans-serif; font-size: 13px; color: #ff7a9c; font-weight: bold; margin-bottom: 4px; }
+.tp-root .tp-mom-text { font-size: 13px; color: #444; line-height: 1.55; word-break: break-word; margin-bottom: 6px; }
+.tp-root .tp-mom-photos { display: grid; gap: 4px; margin-bottom: 6px; }
+.tp-root .tp-mom-photos.n1 { grid-template-columns: 1fr; max-width: 150px; }
+.tp-root .tp-mom-photos.n2 { grid-template-columns: 1fr 1fr; max-width: 200px; }
+.tp-root .tp-mom-photos { grid-template-columns: repeat(3, 1fr); }
+.tp-root .tp-mom-photo { position: relative; aspect-ratio: 1/1; border-radius: 8px; overflow: hidden; background: linear-gradient(135deg, #ffd3e0 0%, #e7d9ff 100%); display: flex; align-items: center; justify-content: center; padding: 4px; }
+.tp-root .tp-mom-photo span { font-size: 10px; color: #7a6f72; text-align: center; line-height: 1.3; word-break: break-word; }
+.tp-root .tp-mom-photo-sticker { background: rgba(255,255,255,0.7); }
+.tp-root .tp-mom-photo-sticker img { width: 100%; height: 100%; object-fit: contain; }
+.tp-root .tp-mom-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+.tp-root .tp-mom-time { font-size: 10px; color: #b0a5a8; }
+.tp-root .tp-mom-acts { display: flex; align-items: center; gap: 10px; }
+.tp-root .tp-mom-acts > span { cursor: pointer; font-size: 13px; color: #a89ca0; }
+.tp-root .tp-mom-like.on { color: #ff5c8a; }
+.tp-root .tp-mom-react { font-size: 10px !important; color: #ff7a9c !important; border: 1px solid rgba(255,143,171,0.5); border-radius: 9px; padding: 1px 6px; }
+.tp-root .tp-mom-del2 { font-size: 11px !important; }
+.tp-root .tp-mom-social { margin-top: 6px; background: rgba(255,255,255,0.7); border-radius: 8px; padding: 6px 8px; }
+.tp-root .tp-mom-likes { font-size: 11px; color: #ff7a9c; margin-bottom: 3px; }
+.tp-root .tp-mom-comment { font-size: 12px; color: #555; line-height: 1.5; }
+.tp-root .tp-mom-comment b { color: #ff7a9c; font-weight: normal; }
+.tp-root .tp-mom-cmtbox { display: flex; gap: 6px; margin-top: 6px; }
+.tp-root .tp-mom-cmtinput { flex: 1; height: 28px; border-radius: 8px; border: 1px solid rgba(255,143,171,0.4); padding: 0 8px; font-size: 12px; outline: none; background: #fff; font-family: 'XiaoLai', cursive; }
+.tp-root .tp-mom-cmtsend { flex-shrink: 0; height: 28px; line-height: 28px; padding: 0 12px; border-radius: 8px; background: linear-gradient(135deg, #ff9a9e, #fecfef); color: #fff; font-size: 12px; cursor: pointer; }
+/* 发朋友圈弹层 */
+.tp-root .tp-mom-composer { position: absolute; inset: 0; background: rgba(0,0,0,0.28); display: none; align-items: center; justify-content: center; z-index: 30; }
+.tp-root .tp-mom-composer.open { display: flex; }
+.tp-root .tp-mom-comp-card { width: 84%; background: rgba(255,255,255,0.96); border-radius: 16px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+.tp-root .tp-mom-comp-title { font-family: 'XiaoLai', sans-serif; font-size: 14px; color: #ff7a9c; font-weight: bold; margin-bottom: 10px; }
+.tp-root .tp-mom-comp-input { width: 100%; height: 84px; border-radius: 10px; border: 1px solid rgba(255,143,171,0.4); padding: 8px 10px; font-size: 13px; color: #444; box-sizing: border-box; outline: none; resize: none; font-family: 'XiaoLai', cursive; }
+.tp-root .tp-mom-comp-hint { font-size: 10px; color: #b0a5a8; margin: 6px 0 12px; }
+.tp-root .tp-mom-comp-btns { display: flex; justify-content: flex-end; gap: 10px; }
+.tp-root .tp-mom-comp-cancel, .tp-root .tp-mom-comp-send { height: 32px; line-height: 32px; padding: 0 18px; border-radius: 16px; font-size: 13px; cursor: pointer; font-family: 'XiaoLai', sans-serif; }
+.tp-root .tp-mom-comp-cancel { background: rgba(0,0,0,0.06); color: #888; }
+.tp-root .tp-mom-comp-send { background: linear-gradient(135deg, #ff9a9e, #fecfef); color: #fff; font-weight: bold; }
+.tp-root .tp-placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #b0a5a8; font-family: 'XiaoLai', sans-serif; font-size: 13px; text-align: center; padding: 20px; }
+.tp-root .tp-placeholder .big { font-size: 34px; }
+
+/* 悬浮图标 / 面板 */
+.tp-fab { position: fixed; right: 18px; bottom: 92px; width: 42px; height: 42px; border-radius: 50%; z-index: 2147483000 !important; cursor: grab; touch-action: none; box-shadow: 0 6px 18px rgba(255,154,158,0.5), 0 2px 6px rgba(0,0,0,0.15); border: 3px solid #FFF0F0; background: #fff; transition: box-shadow 0.15s; user-select: none; }
+.tp-fab:active { cursor: grabbing; }
+.tp-fab img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; pointer-events: none; }
+.tp-badge { position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: #ff5a5f; color: #fff; font-size: 9px; font-weight: bold; display: none; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(255,90,95,0.5); box-sizing: border-box; pointer-events: none; }
+.tp-badge.show { display: flex; }
+
+.tp-panel { position: fixed; right: 18px; bottom: 92px; width: 330px; height: min(580px, calc(100vh - 110px)); height: min(580px, calc(100dvh - 110px)); z-index: 2147483001 !important; display: none; box-shadow: 0 20px 50px rgba(0,0,0,0.22), 0 10px 20px rgba(0,0,0,0.12); border-radius: 34px; }
+.tp-panel.open { display: block; animation: tp-panelIn 0.22s cubic-bezier(0.34,1.4,0.64,1); }
+@keyframes tp-panelIn { from { opacity: 0; transform: scale(0.7) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+/* 全局开关（酒馆扩展面板内） */
+#tp-ext-block { padding: 6px 0; }
+#tp-ext-block label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+
+@media (max-width: 560px), (max-height: 640px) {
+    .tp-fab { right: 12px; bottom: 78px; width: 38px; height: 38px; }
+    .tp-panel { border-radius: 28px; }
+}
+
+
+/* ============================================================
+   v0.9 · 会话列表 / 分层设置 / 时间戳
+   ============================================================ */
+
+/* 聊天里的时间分隔 */
+.tp-root .tp-timestamp { align-self: center; margin: 8px 0 6px; padding: 2px 10px; border-radius: 10px; background: rgba(255,255,255,0.55); color: #a89ba0; font-size: 10px; font-family: 'XiaoLai', sans-serif; letter-spacing: 0.5px; flex-shrink: 0; }
+
+/* 会话列表 */
+.tp-root .tp-clist { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 0 10px; scrollbar-width: none; }
+.tp-root .tp-clist::-webkit-scrollbar { display: none; }
+.tp-root .tp-clist { padding: 8px 8px 12px; }
+.tp-root .tp-citem { display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin-bottom: 6px; border-radius: 14px; cursor: pointer; position: relative; transition: background 0.15s, transform 0.12s; background: rgba(255,255,255,0.72); box-shadow: 0 2px 8px rgba(255,154,158,0.10); border: 1px solid rgba(255,255,255,0.65); }
+.tp-root .tp-citem:hover { background: rgba(255,255,255,0.9); }
+.tp-root .tp-citem:active { transform: scale(0.985); background: rgba(255,240,244,0.95); }
+.tp-root .tp-cav { width: 42px; height: 42px; border-radius: 12px; object-fit: cover; flex-shrink: 0; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+.tp-root .tp-cmain { flex: 1; min-width: 0; }
+.tp-root .tp-cname { font-family: 'XiaoLai', cursive; font-size: 14px; font-weight: 700; color: #6C7275; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-root .tp-cprev { font-size: 11px; color: #a89ba0; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-root .tp-cright { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; min-width: 34px; }
+.tp-root .tp-ctime { font-size: 9px; color: #bdb2b6; }
+.tp-root .tp-cbadge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ff5a5f; color: #fff; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.tp-root .tp-cdel { font-size: 10px; color: #d8ccd0; cursor: pointer; padding: 0 2px; }
+.tp-root .tp-cdel:hover { color: #ff5a5f; }
+
+/* 新建联系人 */
+.tp-root .tp-npc-sheet { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,0.28); display: none; align-items: center; justify-content: center; z-index: 40; padding: 14px; box-sizing: border-box; }
+.tp-root .tp-npc-sheet.open { display: flex; }
+.tp-root .tp-npc-card { width: 100%; max-width: 300px; max-height: 100%; overflow-y: auto; background: rgba(255,255,255,0.97); border-radius: 18px; padding: 14px; box-shadow: 0 12px 30px rgba(0,0,0,0.2); scrollbar-width: none; }
+.tp-root .tp-npc-card::-webkit-scrollbar { display: none; }
+.tp-root .tp-npc-title { font-family: 'XiaoLai', sans-serif; font-size: 14px; font-weight: bold; color: #ff7a9c; margin-bottom: 10px; text-align: center; }
+.tp-root .tp-npc-card .tp-set-input { margin-bottom: 8px; }
+.tp-root .tp-npc-ta { height: 74px; padding: 8px 10px; line-height: 1.5; resize: none; }
+.tp-root .tp-npc-btns { display: flex; gap: 7px; margin-top: 4px; }
+.tp-root .tp-npc-btn { flex: 1; height: 32px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-family: 'XiaoLai', sans-serif; font-size: 11px; font-weight: bold; cursor: pointer; border: 1px solid rgba(255,143,171,0.5); color: #ff7a9c; background: rgba(255,255,255,0.8); white-space: nowrap; }
+.tp-root .tp-npc-btn.ai { background: rgba(255,143,171,0.14); }
+.tp-root .tp-npc-btn.ok { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: #fff; border-color: transparent; box-shadow: 0 3px 8px rgba(255,154,158,0.35); }
+
+/* 设置页里的图标一行 */
+.tp-root .tp-ico-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tp-root .tp-ico-prev { width: 26px; height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.tp-root .tp-ico-prev img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; }
+.tp-root .tp-cs-top { margin: 0 0 12px 0; }
+.tp-root .tp-danger { margin-top: 10px; border-color: rgba(255,90,95,0.5); color: #ff5a5f; }
+.tp-root .tp-danger:active { background: rgba(255,90,95,0.12); }
+
+
+/* ============================================================
+   v0.10 · 群聊
+   ============================================================ */
+
+/* 九宫格群头像 */
+.tp-root .tp-gav { display: grid; gap: 1px; overflow: hidden; background: rgba(255,255,255,0.9); padding: 1px; box-sizing: border-box; }
+.tp-root .tp-gav.n1 { grid-template-columns: 1fr; }
+.tp-root .tp-gav.n2 { grid-template-columns: 1fr 1fr; }
+.tp-root .tp-gav.n3, .tp-root .tp-gav.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tp-root .tp-gav img { width: 100%; height: 100%; object-fit: cover; display: block; min-width: 0; min-height: 0; }
+
+/* 列表里群名后面的人数 */
+.tp-root .tp-gtag { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 7px; background: rgba(255,143,171,0.16); color: #ff8fab; font-size: 9px; font-weight: normal; vertical-align: middle; }
+
+/* 群里气泡上方的说话人 */
+.tp-root .tp-speaker { font-size: 9px; color: #a89ba0; margin: 0 0 3px 4px; font-family: 'XiaoLai', sans-serif; }
+.tp-root .msg-row.right .tp-speaker { text-align: right; margin: 0 4px 3px 0; }
+
+/* ＋ 里的两个选项 */
+.tp-root .tp-add-opt { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 8px; border-radius: 13px; background: rgba(255,240,244,0.85); border: 1px solid rgba(255,143,171,0.28); font-family: 'XiaoLai', sans-serif; font-size: 13px; color: #6C7275; cursor: pointer; transition: transform 0.12s, background 0.15s; }
+.tp-root .tp-add-opt:hover { background: rgba(255,224,233,0.95); }
+.tp-root .tp-add-opt:active { transform: scale(0.985); }
+.tp-root .tp-add-ico { font-size: 17px; }
+
+/* 成员勾选 */
+.tp-root .tp-pick-box { max-height: 190px; overflow-y: auto; border: 1px solid rgba(255,143,171,0.3); border-radius: 11px; padding: 5px; margin-bottom: 9px; background: rgba(255,255,255,0.75); scrollbar-width: none; }
+.tp-root .tp-pick-box::-webkit-scrollbar { display: none; }
+.tp-root .tp-pick-row { display: flex; align-items: center; gap: 8px; padding: 6px 7px; border-radius: 9px; cursor: pointer; font-family: 'XiaoLai', sans-serif; font-size: 12px; color: #6C7275; }
+.tp-root .tp-pick-row:hover { background: rgba(255,240,244,0.9); }
+.tp-root .tp-pick-row input { accent-color: #ff8fab; width: 14px; height: 14px; flex-shrink: 0; margin: 0; }
+.tp-root .tp-pick-av { width: 26px; height: 26px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: #fff; }
+.tp-root .tp-pick-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
