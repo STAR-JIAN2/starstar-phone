@@ -13,7 +13,7 @@
 酒馆 → 扩展（插头图标）→ **Install extension** → 粘贴：
 
 ```
-https://github.com/你的用户名/tavern-phone
+https://github.com/STAR-JIAN2/tavern-phone
 ```
 
 装完刷新页面，右下角出现一个圆形悬浮球，点它就打开了。
