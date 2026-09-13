@@ -18,8 +18,8 @@ https://github.com/STAR-JIAN2/starstar-phone
 
 装完刷新页面，右下角出现一个圆形悬浮球，点它就打开了。
 
-> 如果你之前手动往 `public/scripts/extensions/third-party/` 里放过这个扩展的文件夹，
-> **先把那个文件夹删掉**再装，否则会撞名字。
+> 如果你之前手动放过这个扩展的文件夹，**先把那个文件夹删掉**再装，否则会撞名字。
+> 扩展目录在 `data/<你的用户名>/extensions/`（旧版酒馆是 `public/scripts/extensions/third-party/`）。
 
 想更新的时候，在扩展列表里点这个扩展的 **Update** 按钮就行。
 
