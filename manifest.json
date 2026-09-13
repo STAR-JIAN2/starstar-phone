@@ -1,5 +1,5 @@
 {
-    "display_name": "星宝的小手机",
+    "display_name": "星星小手机",
     "loading_order": 100,
     "requires": [],
     "optional": [],
@@ -7,5 +7,5 @@
     "css": "style.css",
     "author": "星宝 & 可可",
     "version": "0.12.0",
-    "homePage": "https://github.com/STAR-JIAN2/tavern-phone"
+    "homePage": "https://github.com/STAR-JIAN2/starstar-phone"
 }

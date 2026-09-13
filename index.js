@@ -1,5 +1,5 @@
 /* ============================================================
- * 星宝的小手机 · SillyTavern 扩展
+ * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
  * v0.12.0
  * ============================================================ */
@@ -1350,7 +1350,7 @@ function injectGlobalToggle() {
     const host = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (!host || document.getElementById('tp-global-enable')) return;
     const s = getSettings();
-    host.insertAdjacentHTML('beforeend', `<div id="tp-ext-block" class="tp-root"><label><input type="checkbox" id="tp-global-enable" ${s.globalEnabled ? 'checked' : ''}> 显示「星宝的小手机」悬浮球</label></div>`);
+    host.insertAdjacentHTML('beforeend', `<div id="tp-ext-block" class="tp-root"><label><input type="checkbox" id="tp-global-enable" ${s.globalEnabled ? 'checked' : ''}> 显示「星星小手机」悬浮球</label></div>`);
     document.getElementById('tp-global-enable').addEventListener('change', function () { getSettings().globalEnabled = this.checked; saveSettings(); applyGlobalEnabled(); });
 }
 

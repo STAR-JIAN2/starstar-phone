@@ -1,4 +1,4 @@
-# 📱 星宝的小手机
+# 📱 星星小手机
 
 给你的角色装一部小手机。
 
@@ -13,10 +13,13 @@
 酒馆 → 扩展（插头图标）→ **Install extension** → 粘贴：
 
 ```
-https://github.com/STAR-JIAN2/tavern-phone
+https://github.com/STAR-JIAN2/starstar-phone
 ```
 
 装完刷新页面，右下角出现一个圆形悬浮球，点它就打开了。
+
+> 如果你之前手动往 `public/scripts/extensions/third-party/` 里放过这个扩展的文件夹，
+> **先把那个文件夹删掉**再装，否则会撞名字。
 
 想更新的时候，在扩展列表里点这个扩展的 **Update** 按钮就行。
 
@@ -190,4 +193,4 @@ https://github.com/STAR-JIAN2/tavern-phone
 
 **手机端**：面板会自动铺满屏幕，键盘弹出时也会重新排版。
 
-**悬浮球不见了**：酒馆的扩展设置面板里有个「显示『星宝的小手机』悬浮球」的开关。
+**悬浮球不见了**：酒馆的扩展设置面板里有个「显示『星星小手机』悬浮球」的开关。
