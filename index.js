@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.14.0
+ * v0.14.1
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -320,13 +320,17 @@ function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
 // 一条消息实际显示用的时间
 function msgTime(m) { return (m && m.st) || (m && m.ts) || 0; }
-// 整个手机里最靠后的那个时间，当成"剧情里的现在"
+// 剧情里的"现在"＝所有会话里最靠后的那个剧情时间。
+// 只认带 st 的消息——老消息和关掉开关时存的都是现实时间，混进来会把时钟带跑
+// （典型症状：AI 报 17:38，但上一条是你现实里的 23:45，于是被顶到第二天）。
 function storyNow() {
     let max = 0;
     const all = allChats();
     for (const id of Object.keys(all)) {
-        const l = all[id]; if (!Array.isArray(l) || !l.length) continue;
-        const t = msgTime(l[l.length - 1]); if (t > max) max = t;
+        const l = all[id]; if (!Array.isArray(l)) continue;
+        for (let i = l.length - 1; i >= 0; i--) {
+            if (l[i] && l[i].st) { if (l[i].st > max) max = l[i].st; break; }
+        }
     }
     return max;
 }
@@ -338,6 +342,22 @@ function nextStoryTime(lo, hi) {
     const add = lo + Math.floor(Math.random() * (hi - lo + 1));
     return base + add * 60000;
 }
+// 把本轮聊天里所有消息的剧情时间清掉，时钟从下一次 AI 报时间时重新开始。
+// 用来收拾「新旧时间混在一起」留下的烂摊子。消息内容不动。
+async function resetStoryClock() {
+    const all = allChats();
+    let n = 0;
+    for (const id of Object.keys(all)) {
+        const l = all[id]; if (!Array.isArray(l)) continue;
+        for (const m of l) if (m && m.st) { delete m.st; n++; }
+    }
+    if (!n) { toast('info', '没有需要重排的时间'); return; }
+    await persist();
+    if (state.view === 'room') loadHistory();
+    renderChatList();
+    toast('success', `已清掉 ${n} 条消息的剧情时间，先按现实时间显示，等 AI 下次报时间再重新对齐`);
+}
+
 // 给一串连着发的消息依次发时间。有锚点就从锚点开始，没有就接着最后一条往后排。
 function storyTicker(anchorMs) {
     let cur = 0;
@@ -540,18 +560,18 @@ function appendRow(isUser, r, mid, who) {
     }
     area.scrollTop = area.scrollHeight;
 }
-function renderOne(isUser, text, mid, ts, who) {
+function renderOne(isUser, text, mid, ts, who, nowRef) {
     const r = contentToHtml(text, isUser); if (!r) return;
-    maybeStamp(ts);
+    maybeStamp(ts, nowRef);
     appendRow(isUser, r, mid, who);
 }
 // 距上一条超过 5 分钟（或是第一条）就插一条居中时间
-function maybeStamp(ts) {
+function maybeStamp(ts, nowRef) {
     if (!ts) return;
     const area = chatArea(); if (!area) return;
     if (state.lastStamp && Math.abs(ts - state.lastStamp) < 5 * 60 * 1000) return;
     state.lastStamp = ts;
-    area.insertAdjacentHTML('beforeend', `<div class="tp-timestamp">${esc(stampText(ts, state.nowRef))}</div>`);
+    area.insertAdjacentHTML('beforeend', `<div class="tp-timestamp">${esc(stampText(ts, nowRef || Date.now()))}</div>`);
 }
 
 // AI 回复 → { status, items[] }。手机块只取 [对|..]，忽略 [我|..]（防复述重复）
@@ -620,8 +640,9 @@ function loadHistory() {
     const a = chatArea(); if (!a) return;
     a.innerHTML = ''; state.lastStamp = 0;
     const list = phoneChat();
-    state.nowRef = storyNow() || Date.now();
-    for (const m of list) renderOne(m.role === 'user', m.text, m.id, msgTime(m), m.who);
+    const storyRef = storyNow();
+    // 有剧情时间的按剧情里的今天算，老消息还按现实时间算，各归各的
+    for (const m of list) renderOne(m.role === 'user', m.text, m.id, msgTime(m), m.who, m.st ? (storyRef || m.st) : Date.now());
 }
 
 /* ---------- typing ---------- */
@@ -1231,7 +1252,7 @@ function lastActive(ct) { const l = chatOf(ct.id); const last = l[l.length - 1];
 function renderChatList() {
     const box = document.getElementById('tp-clist'); if (!box) return;
     // 主角色永远置顶，其余按最后消息时间排
-    const nowRef = storyNow() || Date.now();
+    const nowRef = storyNow();
     const arr = contacts().slice().sort((a, b) => {
         if (a.id === CHAR_ID) return -1;
         if (b.id === CHAR_ID) return 1;
@@ -1246,7 +1267,7 @@ function renderChatList() {
         return `<div class="tp-citem" data-open="${esc(ct.id)}">
             ${ctAvatarHTML(ct, 'tp-cav')}
             <div class="tp-cmain"><div class="tp-cname">${esc(ctName(ct))}${isGroup(ct) ? `<span class="tp-gtag">${groupMembers(ct).length}</span>` : ''}</div><div class="tp-cprev">${esc(prev)}</div></div>
-            <div class="tp-cright"><span class="tp-ctime">${esc(last ? stampShort(msgTime(last), nowRef) : '')}</span>${unread}${del}</div>
+            <div class="tp-cright"><span class="tp-ctime">${esc(last ? stampShort(msgTime(last), last.st ? (nowRef || last.st) : Date.now()) : '')}</span>${unread}${del}</div>
           </div>`;
     }).join('');
 }
@@ -1751,6 +1772,9 @@ function buildPanelHTML() {
                 <div class="tp-set-group"><label class="tp-set-label">告诉主线最近几条</label><input class="tp-set-input" id="tp-set-livecount" type="number" min="1" max="30"></div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">手机里显示剧情时间</label><div class="tp-switch" id="tp-set-storytime"></div></div></div>
                 <div class="tp-hint">AI 在 <code>[手机|在线|17:25]</code> 里报的时间当基准，之后每发一条自然往前走一两分钟。带日期也认：<code>9/15 17:25</code>。关掉就用你电脑的现实时间。</div>
+                <div class="tp-set-group"><button class="tp-mem-btn" id="tp-time-reset">重排：清掉已有消息的剧情时间</button>
+                  <div class="tp-hint">时间看着乱了就点一下。已有消息先按现实时间显示，等 AI 下次报时间再重新对齐。消息内容不动。</div>
+                </div>
                 <div class="tp-hint">开着的话，你在手机上说的话不用等总结，主线立刻就知道，TA 在正文里能直接接上。</div>
                 <div class="tp-mem-divider">📱 记忆回流 · 让主线知道手机聊了啥</div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">开启记忆回流</label><div class="tp-switch" id="tp-set-mem"></div></div></div>
@@ -1860,6 +1884,7 @@ function bindEvents() {
     bindSwitch('tp-set-strip', 'pickupStrip');
     bindSwitch('tp-set-live', 'liveInject', refreshInjection);
     bindSwitch('tp-set-storytime', 'storyTime', () => { if (state.view === 'room') loadHistory(); renderChatList(); });
+    document.getElementById('tp-time-reset').addEventListener('click', resetStoryClock);
 
     document.getElementById('tp-mem-now').addEventListener('click', () => summarizeAndFlow(true));
     document.getElementById('tp-mem-clear').addEventListener('click', clearMem);
@@ -1948,7 +1973,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.1 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
