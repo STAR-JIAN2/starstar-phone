@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.13.3
+ * v0.14.0
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -84,6 +84,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     pickupStrip: true,                                   // 吸走之后，正文里那段抹掉
     liveInject: true,                                    // 把最近几条手机原文实时告诉主线
     liveCount: 8,                                        // 告诉主线最近几条
+    storyTime: true,                                     // 手机里显示剧情时间（AI 报的），关了就用现实时间
 });
 
 const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0 };
@@ -311,12 +312,63 @@ function updateCardStatus() {
         : `这张卡里还没有手机预设。${api}`;
 }
 
-/* ---------- 时间戳 ---------- */
+/* ---------- 时间戳 ----------
+   手机里显示的是「剧情时间」：AI 在 [手机|状态|17:25] 里报的时间当锚点，
+   之后每发一条就自然往前走一两分钟——TA 25 分发的，你回可能就是 27、28 分。
+   AI 从没报过时间的话，退回现实时间。 */
 function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+// 一条消息实际显示用的时间
+function msgTime(m) { return (m && m.st) || (m && m.ts) || 0; }
+// 整个手机里最靠后的那个时间，当成"剧情里的现在"
+function storyNow() {
+    let max = 0;
+    const all = allChats();
+    for (const id of Object.keys(all)) {
+        const l = all[id]; if (!Array.isArray(l) || !l.length) continue;
+        const t = msgTime(l[l.length - 1]); if (t > max) max = t;
+    }
+    return max;
+}
+// 下一条消息的时间：在最后一条基础上往前推 lo~hi 分钟
+function nextStoryTime(lo, hi) {
+    if (!getSettings().storyTime) return Date.now();
+    const base = storyNow();
+    if (!base) return Date.now();
+    const add = lo + Math.floor(Math.random() * (hi - lo + 1));
+    return base + add * 60000;
+}
+// 给一串连着发的消息依次发时间。有锚点就从锚点开始，没有就接着最后一条往后排。
+function storyTicker(anchorMs) {
+    let cur = 0;
+    return (isFirst) => {
+        if (!getSettings().storyTime) return Date.now();
+        if (!cur) { cur = anchorMs || nextStoryTime(isFirst ? 1 : 0, isFirst ? 2 : 1); return cur; }
+        cur += (Math.random() < 0.6 ? 0 : 1) * 60000;   // 连发的几条就差零到一分钟
+        return cur;
+    };
+}
+// 解析 AI 报的时间：17:25 / 9/15 17:25 / 2026-09-15 17:25 都认
+function parseStoryTime(raw, prevMs) {
+    const t = String(raw || '').trim(); if (!t) return 0;
+    const hm = t.match(/(\d{1,2})\s*[:：]\s*(\d{2})/); if (!hm) return 0;
+    const prev = prevMs ? new Date(prevMs) : new Date();
+    let y = prev.getFullYear(), mo = prev.getMonth(), d = prev.getDate(), dated = false;
+    const ymd = t.match(/(\d{4})\s*[\/\-年.]\s*(\d{1,2})\s*[\/\-月.]\s*(\d{1,2})/);
+    const md = t.match(/(?:^|[^\d:：])(\d{1,2})\s*[\/\-月.]\s*(\d{1,2})(?!\s*[:：])/);
+    if (ymd) { y = +ymd[1]; mo = +ymd[2] - 1; d = +ymd[3]; dated = true; }
+    else if (md) { mo = +md[1] - 1; d = +md[2]; dated = true; }
+    const hh = clamp(+hm[1], 0, 23), mm = clamp(+hm[2], 0, 59);
+    let ms = new Date(y, mo, d, hh, mm, 0, 0).getTime();
+    if (isNaN(ms)) return 0;
+    // 没写日期又比上一条早，当成过了一天（比如 23:50 → 00:10）
+    if (!dated && prevMs && ms < prevMs - 60000) ms += 86400000;
+    return ms;
+}
 function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 // 聊天里那条居中的时间分隔
-function stampText(ts) {
-    const d = new Date(ts), now = new Date(); const hm = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+function stampText(ts, nowRef) {
+    const d = new Date(ts), now = new Date(nowRef || Date.now()); const hm = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     if (sameDay(d, now)) return hm;
     const y = new Date(now.getTime() - 86400000);
     if (sameDay(d, y)) return '昨天 ' + hm;
@@ -324,9 +376,9 @@ function stampText(ts) {
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`;
 }
 // 聊天列表右上角那个短的
-function stampShort(ts) {
+function stampShort(ts, nowRef) {
     if (!ts) return '';
-    const d = new Date(ts), now = new Date();
+    const d = new Date(ts), now = new Date(nowRef || Date.now());
     if (sameDay(d, now)) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     if (sameDay(d, new Date(now.getTime() - 86400000))) return '昨天';
     if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -497,19 +549,20 @@ function renderOne(isUser, text, mid, ts, who) {
 function maybeStamp(ts) {
     if (!ts) return;
     const area = chatArea(); if (!area) return;
-    if (state.lastStamp && ts - state.lastStamp < 5 * 60 * 1000) return;
+    if (state.lastStamp && Math.abs(ts - state.lastStamp) < 5 * 60 * 1000) return;
     state.lastStamp = ts;
-    area.insertAdjacentHTML('beforeend', `<div class="tp-timestamp">${esc(stampText(ts))}</div>`);
+    area.insertAdjacentHTML('beforeend', `<div class="tp-timestamp">${esc(stampText(ts, state.nowRef))}</div>`);
 }
 
 // AI 回复 → { status, items[] }。手机块只取 [对|..]，忽略 [我|..]（防复述重复）
 function parseCharPayload(raw) {
     const ta = (ctx().name2 || '').trim();
-    const items = []; let status = null;
+    const items = []; let status = null, time = '';
     // [手机|状态|时间] … [/手机]。时间那段有的预设不写，所以可有可无。
     const bm = String(raw).match(/\[手机\|([^|\]]*?)(?:\|([^|\]]*?))?\]([\s\S]*?)\[\/手机\]/);
     if (bm) {
         status = (bm[1] || '').trim();
+        time = (bm[2] || '').trim();
         // 只收手机块里的东西：[对|…] 是气泡，[旁白：…] 是旁白，[我|…] 是复述用户的，丢掉。
         // 块外面那些旁白是主线小说的正文，不往手机里搬。
         bm[3].split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
@@ -525,7 +578,7 @@ function parseCharPayload(raw) {
             if (l) items.push(l);
         });
     }
-    return { status, items };
+    return { status, items, time };
 }
 
 // 群聊回复：一行一条「名字：内容」，认不出名字的算上一个人的续话
@@ -566,7 +619,9 @@ function deleteMsg(mid) {
 function loadHistory() {
     const a = chatArea(); if (!a) return;
     a.innerHTML = ''; state.lastStamp = 0;
-    for (const m of phoneChat()) renderOne(m.role === 'user', m.text, m.id, m.ts, m.who);
+    const list = phoneChat();
+    state.nowRef = storyNow() || Date.now();
+    for (const m of list) renderOne(m.role === 'user', m.text, m.id, msgTime(m), m.who);
 }
 
 /* ---------- typing ---------- */
@@ -582,8 +637,8 @@ function hideTyping() { const t = document.getElementById('tp-typing'); if (t) t
 /* ---------- 发送 / 催回复 ---------- */
 function pushUser(text) {
     const t = String(text).trim(); if (!t) return;
-    const item = { id: genId(), role: 'user', text: t, ts: Date.now() };
-    phoneChat().push(item); renderOne(true, t, item.id, item.ts); persist(); renderChatList(); refreshInjection();
+    const item = { id: genId(), role: 'user', text: t, ts: Date.now(), st: nextStoryTime(1, 3) };
+    phoneChat().push(item); renderOne(true, t, item.id, msgTime(item)); persist(); renderChatList(); refreshInjection();
 }
 
 async function askReply() {
@@ -612,6 +667,7 @@ async function askReply() {
         if (!text) { toast('warning', '没收到回复，检查下酒馆的API连接？'); return; }
         const parsed = parseCharPayload(text);
         const status = parsed.status;
+        const tick = storyTicker(parseStoryTime(parsed.time, storyNow()));
         let items = parsed.items;
         // 关了旁白就别让 AI 偷偷塞旁白进来（全被滤光的话还是留着，免得一条都没有）
         if (!ctNarration(ct) && items.length) {
@@ -622,14 +678,16 @@ async function askReply() {
         // 生成期间用户可能翻走了，别把消息画到别人的会话里
         const visible = () => state.panelOpen && state.activeId === ct.id && state.view === 'room';
         if (!items.length) {
-            const item = { id: genId(), role: 'char', text, ts: Date.now() };
-            chatOf(ct.id).push(item); if (visible()) renderOne(false, text, item.id, item.ts);
+            const item = { id: genId(), role: 'char', text, ts: Date.now(), st: tick(true) };
+            chatOf(ct.id).push(item); if (visible()) renderOne(false, text, item.id, msgTime(item));
         } else {
+            let first = true;
             for (const part of items) {           // 逐条延迟弹出
                 if (visible()) showTyping();
                 await sleep(500); hideTyping();
-                const item = { id: genId(), role: 'char', text: part, ts: Date.now() };
-                chatOf(ct.id).push(item); if (visible()) renderOne(false, part, item.id, item.ts);
+                const item = { id: genId(), role: 'char', text: part, ts: Date.now(), st: tick(first) };
+                first = false;
+                chatOf(ct.id).push(item); if (visible()) renderOne(false, part, item.id, msgTime(item));
             }
         }
         if (!visible()) { ct.unread = (ct.unread || 0) + 1; recountBadge(); }
@@ -666,12 +724,14 @@ async function askGroupReply() {
         if (!ctNarration(ct) && rows.length) { const pure = rows.filter(r => r.who); if (pure.length) rows = pure; }
         if (!rows.length) { console.warn(`[${MODULE_NAME}] 群聊没解析出内容，原始返回：`, text); toast('warning', '没解析出内容，再点一次试试？'); return; }
         const visible = () => state.panelOpen && state.activeId === ct.id && state.view === 'room';
+        let gFirst = true; const gTick = storyTicker(0);
         for (const row of rows) {
             if (visible()) showTyping();
             await sleep(450); hideTyping();
-            const item = { id: genId(), role: 'char', who: row.who || null, text: row.text, ts: Date.now() };
+            const item = { id: genId(), role: 'char', who: row.who || null, text: row.text, ts: Date.now(), st: gTick(gFirst) };
+            gFirst = false;
             chatOf(ct.id).push(item);
-            if (visible()) renderOne(false, row.text, item.id, item.ts, item.who);
+            if (visible()) renderOne(false, row.text, item.id, msgTime(item), item.who);
         }
         if (!visible()) { ct.unread = (ct.unread || 0) + 1; recountBadge(); }
         persist(); renderChatList();
@@ -727,7 +787,7 @@ function findPhoneBlocks(raw) {
         if (/<\/think(?:ing)?>|<\/?content>|<顶栏>|\[V9_DAILY|<\/?DRAFT/i.test(text)) {
             console.warn(`[${MODULE_NAME}] 有个 [手机] 块跨到正文结构外面去了，跳过不处理。开头：`, text.slice(0, 80));
         } else {
-            out.push({ index: m.index, length: m[0].length, status: (m[1] || '').trim(), body: m[3], text });
+            out.push({ index: m.index, length: m[0].length, status: (m[1] || '').trim(), time: (m[2] || '').trim(), body: m[3], text });
         }
         if (m.index === PHONE_BLOCK_RE.lastIndex) PHONE_BLOCK_RE.lastIndex++;
     }
@@ -791,10 +851,11 @@ async function pickupFromMainline(mesId) {
         picked[key] = 1;
         if (b.status) status = b.status;
         const rows = dropReplayed(parseBlockLines(b.body), list);
-        for (const row of rows) {
-            const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), fromStory: true };
+        const tick = storyTicker(parseStoryTime(b.time, storyNow()));
+        rows.forEach((row, i) => {
+            const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), st: tick(i === 0), fromStory: true };
             list.push(item); added++;
-        }
+        });
     }
     if (!added) { await maybeStripBlocks(mesId, msg, raw, blocks); return; }
 
@@ -1166,10 +1227,11 @@ function previewText(m) {
     if (allStickers()[bare]) return '[表情]';
     return t.replace(/\s+/g, ' ').slice(0, 22);
 }
-function lastActive(ct) { const l = chatOf(ct.id); const last = l[l.length - 1]; return last ? (last.ts || 0) : (ct.createdAt || 0); }
+function lastActive(ct) { const l = chatOf(ct.id); const last = l[l.length - 1]; return last ? msgTime(last) : (ct.createdAt || 0); }
 function renderChatList() {
     const box = document.getElementById('tp-clist'); if (!box) return;
     // 主角色永远置顶，其余按最后消息时间排
+    const nowRef = storyNow() || Date.now();
     const arr = contacts().slice().sort((a, b) => {
         if (a.id === CHAR_ID) return -1;
         if (b.id === CHAR_ID) return 1;
@@ -1184,7 +1246,7 @@ function renderChatList() {
         return `<div class="tp-citem" data-open="${esc(ct.id)}">
             ${ctAvatarHTML(ct, 'tp-cav')}
             <div class="tp-cmain"><div class="tp-cname">${esc(ctName(ct))}${isGroup(ct) ? `<span class="tp-gtag">${groupMembers(ct).length}</span>` : ''}</div><div class="tp-cprev">${esc(prev)}</div></div>
-            <div class="tp-cright"><span class="tp-ctime">${esc(last ? stampShort(last.ts) : '')}</span>${unread}${del}</div>
+            <div class="tp-cright"><span class="tp-ctime">${esc(last ? stampShort(msgTime(last), nowRef) : '')}</span>${unread}${del}</div>
           </div>`;
     }).join('');
 }
@@ -1460,6 +1522,7 @@ function applySettings() {
     const psw = q('#tp-set-pickup'); if (psw) psw.classList.toggle('on', !!s.pickup);
     const ssw = q('#tp-set-strip'); if (ssw) ssw.classList.toggle('on', !!s.pickupStrip);
     const lsw = q('#tp-set-live'); if (lsw) lsw.classList.toggle('on', !!s.liveInject);
+    const tsw = q('#tp-set-storytime'); if (tsw) tsw.classList.toggle('on', !!s.storyTime);
     if (q('#tp-set-livecount')) q('#tp-set-livecount').value = s.liveCount || 8;
     if (q('#tp-set-memtarget')) q('#tp-set-memtarget').value = s.memTarget || 'chat';
     if (q('#tp-set-memevery')) q('#tp-set-memevery').value = s.memEvery || 6;
@@ -1686,6 +1749,8 @@ function buildPanelHTML() {
                 <div class="tp-hint">AI 在正文里写 <code>[手机]…[/手机]</code> 的时候，那段会被搬进小手机、正文里抹掉，悬浮球亮红点。没装这个扩展的人不受影响，正文里照旧显示。</div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">把手机对话实时告诉主线</label><div class="tp-switch" id="tp-set-live"></div></div></div>
                 <div class="tp-set-group"><label class="tp-set-label">告诉主线最近几条</label><input class="tp-set-input" id="tp-set-livecount" type="number" min="1" max="30"></div>
+                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">手机里显示剧情时间</label><div class="tp-switch" id="tp-set-storytime"></div></div></div>
+                <div class="tp-hint">AI 在 <code>[手机|在线|17:25]</code> 里报的时间当基准，之后每发一条自然往前走一两分钟。带日期也认：<code>9/15 17:25</code>。关掉就用你电脑的现实时间。</div>
                 <div class="tp-hint">开着的话，你在手机上说的话不用等总结，主线立刻就知道，TA 在正文里能直接接上。</div>
                 <div class="tp-mem-divider">📱 记忆回流 · 让主线知道手机聊了啥</div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">开启记忆回流</label><div class="tp-switch" id="tp-set-mem"></div></div></div>
@@ -1794,6 +1859,7 @@ function bindEvents() {
     bindSwitch('tp-set-pickup', 'pickup');
     bindSwitch('tp-set-strip', 'pickupStrip');
     bindSwitch('tp-set-live', 'liveInject', refreshInjection);
+    bindSwitch('tp-set-storytime', 'storyTime', () => { if (state.view === 'room') loadHistory(); renderChatList(); });
 
     document.getElementById('tp-mem-now').addEventListener('click', () => summarizeAndFlow(true));
     document.getElementById('tp-mem-clear').addEventListener('click', clearMem);
@@ -1882,7 +1948,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.3 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
