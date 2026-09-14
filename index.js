@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.14.4
+ * v0.15.0
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -85,6 +85,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     liveInject: true,                                    // 把最近几条手机原文实时告诉主线
     liveCount: 8,                                        // 告诉主线最近几条
     storyTime: true,                                     // 手机里显示剧情时间（AI 报的），关了就用现实时间
+    crossMemory: true,                                   // 群聊记得私聊、私聊记得群聊
+    crossCount: 6,                                       // 交叉带过去几条
 });
 
 const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0 };
@@ -627,6 +629,44 @@ function parseCharPayload(raw) {
     return { status, items, time };
 }
 
+/* ---------- 交叉记忆 ----------
+   你先跟两个 NPC 私聊，再把大家拉进群，群里的人应该记得私聊过什么；
+   反过来私聊时也该记得群里发生的事。默认开着，在设置里可以关。 */
+function lineOf(m, ta) {
+    const me = (ctx().name1 || '我').trim();
+    if (m.role === 'user') return `${me}：${m.text}`;
+    if (m.who) { const w = contactById(m.who); return `${w ? ctName(w) : '某人'}：${m.text}`; }
+    return `${ta}：${m.text}`;
+}
+// 给群聊用：各成员和你的私聊
+function privateContext(group) {
+    const s = getSettings(); if (!s.crossMemory) return '';
+    const n = clamp(parseInt(s.crossCount, 10) || 6, 1, 20);
+    const me = (ctx().name1 || '我').trim();
+    const parts = [];
+    for (const m of groupMembers(group)) {
+        const l = chatOf(m.id).slice(-n);
+        if (!l.length) continue;
+        parts.push(`${ctName(m)} 和 ${me} 的私聊：\n` + l.map(x => lineOf(x, ctName(m))).join('\n'));
+    }
+    if (!parts.length) return '';
+    return `\n\n【各人私下和${me}聊过的（只有当事人自己知道，别让别人提起不属于他的私聊内容）】\n` + parts.join('\n\n');
+}
+// 给私聊用：TA 也在的那些群
+function groupContext(ct) {
+    const s = getSettings(); if (!s.crossMemory || isGroup(ct)) return '';
+    const n = clamp(parseInt(s.crossCount, 10) || 6, 1, 20);
+    const parts = [];
+    for (const g of contacts()) {
+        if (!isGroup(g) || !(g.members || []).includes(ct.id)) continue;
+        const l = chatOf(g.id).slice(-n);
+        if (!l.length) continue;
+        parts.push(`群「${ctName(g)}」里最近：\n` + l.map(x => lineOf(x, ctName(g))).join('\n'));
+    }
+    if (!parts.length) return '';
+    return `\n\n【${ctName(ct)}也在的群聊，这些${ctName(ct)}都看得到】\n` + parts.join('\n\n');
+}
+
 // 群聊回复：一行一条「名字：内容」，认不出名字的算上一个人的续话
 function parseGroupPayload(raw, members) {
     const out = [];
@@ -706,7 +746,7 @@ async function askReply() {
     const who = isCharContact(ct) ? '' :
         `${ta}是${me}手机通讯录里的另一个人（不是${charName()}），请完全以${ta}的身份说话。` +
         (ct.persona ? `\n【${ta}的人设】\n${ct.persona}\n` : '');
-    const quiet = `以下是${ta}和${me}正在用手机聊天的场景。${who}请只以${ta}的身份、用适合手机即时通讯的口吻回复${me}的最新消息。可以分多条，每条单独占一行。${narr}不要复述${me}说的话，不要加引号或旁白式叙述。\n\n【手机里最近的对话】\n${recent}\n\n【现在轮到${ta}回复】`;
+    const quiet = `以下是${ta}和${me}正在用手机聊天的场景。${who}请只以${ta}的身份、用适合手机即时通讯的口吻回复${me}的最新消息。可以分多条，每条单独占一行。${narr}不要复述${me}说的话，不要加引号或旁白式叙述。${groupContext(ct)}\n\n【手机里最近的对话】\n${recent}\n\n【现在轮到${ta}回复】`;
     try {
         const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
         hideTyping();
@@ -761,7 +801,7 @@ async function askGroupReply() {
     const narr = ctNarration(ct)
         ? '可以在中间穿插旁白，单独一行写成 [旁白：内容]，写环境或某人的小动作。'
         : '不要写旁白、心理活动或动作描写，只发群里的聊天文字。';
-    const quiet = `这是一个手机群聊「${ctName(ct)}」，${me}也在群里。\n\n【群成员】\n${roster}\n\n请让群里的人接${me}的话。可以只有一个人说，也可以几个人你一言我一语。总共 2 到 6 条。\n严格按这个格式，每行一条，名字必须是上面列出来的那几个：\n名字：内容\n${narr}\n不要替${me}说话，不要加引号。\n\n【群里最近的消息】\n${recent}\n\n【现在群里的人接话】`;
+    const quiet = `这是一个手机群聊「${ctName(ct)}」，${me}也在群里。\n\n【群成员】\n${roster}${privateContext(ct)}\n\n请让群里的人接${me}的话。可以只有一个人说，也可以几个人你一言我一语。总共 2 到 6 条。\n严格按这个格式，每行一条，名字必须是上面列出来的那几个：\n名字：内容\n${narr}\n不要替${me}说话，不要加引号。\n\n【群里最近的消息】\n${recent}\n\n【现在群里的人接话】`;
     try {
         const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
         hideTyping();
@@ -1623,6 +1663,8 @@ function applySettings() {
     const ssw = q('#tp-set-strip'); if (ssw) ssw.classList.toggle('on', !!s.pickupStrip);
     const lsw = q('#tp-set-live'); if (lsw) lsw.classList.toggle('on', !!s.liveInject);
     const tsw = q('#tp-set-storytime'); if (tsw) tsw.classList.toggle('on', !!s.storyTime);
+    const csw = q('#tp-set-cross'); if (csw) csw.classList.toggle('on', !!s.crossMemory);
+    if (q('#tp-set-crosscount')) q('#tp-set-crosscount').value = s.crossCount || 6;
     if (q('#tp-set-livecount')) q('#tp-set-livecount').value = s.liveCount || 8;
     if (q('#tp-set-memtarget')) q('#tp-set-memtarget').value = s.memTarget || 'chat';
     if (q('#tp-set-memevery')) q('#tp-set-memevery').value = s.memEvery || 6;
@@ -1655,6 +1697,7 @@ function saveFromForm() {
     if (q('#tp-set-memevery')) s.memEvery = clamp(parseInt(q('#tp-set-memevery').value, 10) || 6, 2, 50);
     if (q('#tp-set-utilprofile')) s.utilProfile = q('#tp-set-utilprofile').value;
     if (q('#tp-set-livecount')) s.liveCount = clamp(parseInt(q('#tp-set-livecount').value, 10) || 8, 1, 30);
+    if (q('#tp-set-crosscount')) s.crossCount = clamp(parseInt(q('#tp-set-crosscount').value, 10) || 6, 1, 20);
     if (!s.actionIcons || typeof s.actionIcons !== 'object') s.actionIcons = {};
     for (const k of Object.keys(ACTION_ICONS)) { const el = q('#tp-ico-' + k); if (el) { const v = el.value.trim(); if (v) s.actionIcons[k] = v; else delete s.actionIcons[k]; } }
     saveSettings(); applySettings(); loadHistory();
@@ -1855,6 +1898,9 @@ function buildPanelHTML() {
                   <div class="tp-hint">时间看着乱了就点一下。已有消息先按现实时间显示，等 AI 下次报时间再重新对齐。消息内容不动。</div>
                 </div>
                 <div class="tp-hint">开着的话，你在手机上说的话不用等总结，主线立刻就知道，TA 在正文里能直接接上。</div>
+                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">群聊和私聊互相记得</label><div class="tp-switch" id="tp-set-cross"></div></div></div>
+                <div class="tp-set-group"><label class="tp-set-label">互相带过去几条</label><input class="tp-set-input" id="tp-set-crosscount" type="number" min="1" max="20"></div>
+                <div class="tp-hint">开着的话：拉群之前和 NPC 私聊过什么，群里的人记得；私聊时 TA 也记得群里发生的事。私聊内容会标明「只有当事人知道」，避免别人乱提。</div>
                 <div class="tp-mem-divider">📱 记忆回流 · 让主线知道手机聊了啥</div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">开启记忆回流</label><div class="tp-switch" id="tp-set-mem"></div></div></div>
                 <div class="tp-set-group"><label class="tp-set-label">回流到哪本世界书</label><select class="tp-set-input" id="tp-set-memtarget"><option value="chat">本轮聊天专属（推荐）</option><option value="char">角色主世界书</option></select></div>
@@ -1963,6 +2009,7 @@ function bindEvents() {
     bindSwitch('tp-set-strip', 'pickupStrip');
     bindSwitch('tp-set-live', 'liveInject', refreshInjection);
     bindSwitch('tp-set-storytime', 'storyTime', () => { if (state.view === 'room') loadHistory(); renderChatList(); });
+    bindSwitch('tp-set-cross', 'crossMemory');
     document.getElementById('tp-time-reset').addEventListener('click', resetStoryClock);
 
     document.getElementById('tp-mem-now').addEventListener('click', () => summarizeAndFlow(true));
@@ -2052,7 +2099,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.4 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
