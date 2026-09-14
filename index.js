@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.13.2
+ * v0.13.3
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -183,7 +183,8 @@ function ctAvatarHTML(ct, cls) {
 function ctStatusLine(ct) { return isGroup(ct) ? `${groupMembers(ct).length} 人` : ctStatus(ct); }
 function ctUserAvatar(ct) { return (ct && ct.userAvatar) || getSettings().userAvatar; }
 function ctWallpaper(ct) { return (ct && ct.wallpaper) || sv('wallpaper'); }
-function ctStatus(ct) { return (ct && ct.statusText) || sv('statusText'); }
+// TA 自己报的状态压在最上面；你在专属设置里手动填的是底下那层，不会被吃掉
+function ctStatus(ct) { return (ct && ct.liveStatus) || (ct && ct.statusText) || sv('statusText'); }
 function ctNarration(ct) { return (ct && ct.narration != null) ? !!ct.narration : !!sv('narration'); }
 
 function isGroup(ct) { return !!ct && ct.type === 'group'; }
@@ -266,6 +267,7 @@ async function saveToCard() {
 }
 
 // 把卡里的预设铺成本轮聊天的联系人。force=false 时只在还没有联系人的新聊天里铺。
+// 卡里带的预设不含 liveStatus，铺的时候自然就是干净的
 function seedFromCard(force) {
     const c = ctx(); const p = cardPreset();
     if (!p || !Array.isArray(p.contacts) || !p.contacts.length) return false;
@@ -545,10 +547,16 @@ function parseGroupPayload(raw, members) {
     return out;
 }
 
-function setStatus(s) {
-    // 只改当前这次显示，不落库——免得盖掉用户在专属设置里填的在线状态
-    const el = document.querySelector('#tp-panel .contact-status');
-    if (el && s && state.tab === 'chat' && state.view === 'room') el.textContent = s;
+// AI 在 [手机|状态|时间] 里报的状态。存进 liveStatus，和你手动设的那个分开放，
+// 所以 TA 改了不会覆盖你的设置，你在专属设置里保存一次又能把 TA 的清掉。
+function setStatus(text, ct) {
+    const t = String(text || '').trim(); if (!t) return;
+    const target = ct || activeContact();
+    if (!target || isGroup(target)) return;
+    if (target.liveStatus === t) return;
+    target.liveStatus = t;
+    persist();
+    if (state.panelOpen && state.tab === 'chat' && state.view === 'room' && state.activeId === target.id) renderHeader();
 }
 function deleteMsg(mid) {
     const m = allChats(); const id = state.activeId || CHAR_ID;
@@ -790,9 +798,9 @@ async function pickupFromMainline(mesId) {
     }
     if (!added) { await maybeStripBlocks(mesId, msg, raw, blocks); return; }
 
-    if (status) ct.statusText = ct.statusText || '';   // 状态只用于当次显示，不落库
+    if (status) setStatus(status, ct);
     const inRoom = state.panelOpen && state.activeId === CHAR_ID && state.view === 'room';
-    if (inRoom) { loadHistory(); if (status) setStatus(status); }
+    if (inRoom) loadHistory();
     else { ct.unread = (ct.unread || 0) + added; recountBadge(); }
 
     await maybeStripBlocks(mesId, msg, raw, blocks);
@@ -1312,6 +1320,13 @@ function loadCSetForm() {
     if (q('#tp-cs-user')) q('#tp-cs-user').value = ct.userAvatar || '';
     if (q('#tp-cs-wall')) q('#tp-cs-wall').value = ct.wallpaper || '';
     if (q('#tp-cs-status')) q('#tp-cs-status').value = ct.statusText || '';
+    const ls = q('#tp-cs-livestatus');
+    if (ls) {
+        ls.textContent = (!grp && ct.liveStatus)
+            ? `TA 现在自己挂着「${ct.liveStatus}」。保存这里会换回你填的。`
+            : '';
+        ls.style.display = (!grp && ct.liveStatus) ? '' : 'none';
+    }
     if (q('#tp-cs-narr')) q('#tp-cs-narr').value = ct.narration == null ? 'inherit' : (ct.narration ? 'on' : 'off');
     if (q('#tp-cs-persona')) q('#tp-cs-persona').value = ct.persona || '';
     show('#tp-cs-persona-group', !isChar && !grp);
@@ -1328,6 +1343,7 @@ function saveCSet() {
     ct.userAvatar = val('#tp-cs-user');
     ct.wallpaper = val('#tp-cs-wall');
     ct.statusText = val('#tp-cs-status');
+    ct.liveStatus = '';        // 你手动设了就以你的为准，把 TA 自己改的清掉
     ct.persona = q('#tp-cs-persona') ? q('#tp-cs-persona').value.trim() : '';
     const nv = val('#tp-cs-narr'); ct.narration = nv === 'inherit' ? null : (nv === 'on');
     if (isGroup(ct)) {
@@ -1606,7 +1622,7 @@ function buildPanelHTML() {
                   <div class="tp-set-group"><label class="tp-set-label">TA 的头像链接</label><input class="tp-set-input" id="tp-cs-avatar"></div>
                   <div class="tp-set-group"><label class="tp-set-label">我在这个聊天里的头像</label><input class="tp-set-input" id="tp-cs-user" placeholder="留空＝用通用设置里的"></div>
                   <div class="tp-set-group"><label class="tp-set-label">这个聊天的壁纸</label><input class="tp-set-input" id="tp-cs-wall" placeholder="留空＝用这张卡的壁纸"></div>
-                  <div class="tp-set-group" id="tp-cs-status-group"><label class="tp-set-label">TA 的在线状态</label><input class="tp-set-input" id="tp-cs-status" placeholder="留空＝用这张卡的设置"></div>
+                  <div class="tp-set-group" id="tp-cs-status-group"><label class="tp-set-label">TA 的在线状态</label><input class="tp-set-input" id="tp-cs-status" placeholder="留空＝用这张卡的设置"><div class="tp-hint" id="tp-cs-livestatus"></div></div>
                   <div class="tp-set-group" id="tp-cs-members-group"><label class="tp-set-label">群成员</label><div class="tp-pick-box" id="tp-cs-members"></div></div>
                   <div class="tp-set-group"><label class="tp-set-label">旁白模式</label>
                     <select class="tp-set-input" id="tp-cs-narr">
@@ -1866,7 +1882,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.2 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.3 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
