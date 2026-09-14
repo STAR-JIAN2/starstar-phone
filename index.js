@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.0
+ * v0.15.1
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -89,7 +89,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     crossCount: 6,                                       // 交叉带过去几条
 });
 
-const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0 };
+const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0, queue: [] };
 
 /* ---------- 基础 ---------- */
 function ctx() { return window.SillyTavern.getContext(); }
@@ -728,14 +728,36 @@ function pushUser(text) {
     phoneChat().push(item); renderOne(true, t, item.id, msgTime(item)); persist(); renderChatList(); refreshInjection();
 }
 
-async function askReply() {
-    if (state.generating || state.summarizing) return;
-    const c = ctx(); const list = phoneChat();
-    if (isGroup(activeContact())) return askGroupReply();
+/* ---------- 回复排队 ----------
+   同一时刻只跑一次生成。TA 还没回你就去找别人的话，请求排队，
+   前一个结束后自动接着跑——以前是直接静默丢掉，白点一下。 */
+function queueReply(id) {
+    if (state.queue.includes(id)) return false;
+    state.queue.push(id); return true;
+}
+async function drainQueue() {
+    while (state.queue.length && !state.generating && !state.summarizing) {
+        const id = state.queue.shift();
+        const ct = contactById(id); if (!ct) continue;
+        try { await (isGroup(ct) ? askGroupReply(id) : askReply(id)); }
+        catch (e) { console.error(`[${MODULE_NAME}] 排队的回复出错`, e); }
+    }
+}
+// 这条会话的聊天室是不是正开着（决定要不要画 typing 动画）
+function roomVisible(id) { return state.panelOpen && state.activeId === id && state.view === 'room'; }
+
+async function askReply(targetId) {
+    const id = targetId || state.activeId || CHAR_ID;
+    const ct = contactById(id);
+    if (isGroup(ct)) return askGroupReply(id);
+    if (state.generating || state.summarizing) {
+        if (queueReply(id)) toast('info', `TA还在回复，${ctName(ct)}这条排在后面了`);
+        return;
+    }
+    const c = ctx(); const list = chatOf(id);
     if (!list.length) { toast('info', '先发条消息给TA吧～'); return; }
-    state.generating = true; showTyping();
+    state.generating = true; if (roomVisible(id)) showTyping();
     let replied = false;
-    const ct = activeContact();
     const me = (c.name1 || '我').trim();
     const ta = ctName(ct);
     const recent = list.slice(-24).map(m => `${m.role === 'user' ? me : ta}：${m.text}`).join('\n');
@@ -770,7 +792,7 @@ async function askReply() {
         } else {
             let first = true;
             for (const part of items) {           // 逐条延迟弹出
-                if (visible()) showTyping();
+                if (visible()) showTyping();          // visible() 就是 roomVisible(ct.id)
                 await sleep(500); hideTyping();
                 const item = { id: genId(), role: 'char', text: part, ts: Date.now(), st: tick(first) };
                 first = false;
@@ -781,17 +803,26 @@ async function askReply() {
         persist(); replied = true; renderChatList(); refreshInjection();
     } catch (e) {
         hideTyping(); console.error(`[${MODULE_NAME}] 生成失败`, e); toast('error', '生成失败，看看酒馆是否已连接API');
-    } finally { state.generating = false; hideTyping(); if (replied && isCharContact(ct)) maybeSummarize(); }
+    } finally {
+        state.generating = false; hideTyping();
+        if (replied && isCharContact(ct)) maybeSummarize();
+        drainQueue();
+    }
 }
 
 // 群聊：让群里的人你一言我一语地接话
-async function askGroupReply() {
-    if (state.generating || state.summarizing) return;
-    const c = ctx(); const ct = activeContact(); const list = phoneChat();
+async function askGroupReply(targetId) {
+    const id = targetId || state.activeId || CHAR_ID;
+    const ct = contactById(id);
+    if (state.generating || state.summarizing) {
+        if (queueReply(id)) toast('info', `TA还在回复，${ctName(ct)}这条排在后面了`);
+        return;
+    }
+    const c = ctx(); const list = chatOf(id);
     const ms = groupMembers(ct);
     if (!ms.length) { toast('warning', '这个群里还没有人，去右上角 ⋯ 里加几个'); return; }
     if (!list.length) { toast('info', '先在群里说句话吧～'); return; }
-    state.generating = true; showTyping();
+    state.generating = true; if (roomVisible(id)) showTyping();
     const me = (c.name1 || '我').trim();
     const nameOf = m => m.role === 'user' ? me : (m.who ? ctName(contactById(m.who)) : '旁白');
     const recent = list.slice(-24).map(m => `${nameOf(m)}：${m.text}`).join('\n');
@@ -824,7 +855,7 @@ async function askGroupReply() {
         persist(); renderChatList();
     } catch (e) {
         hideTyping(); console.error(`[${MODULE_NAME}] 群聊生成失败`, e); toast('error', '生成失败，看看酒馆是否已连接API');
-    } finally { state.generating = false; hideTyping(); }
+    } finally { state.generating = false; hideTyping(); drainQueue(); }
 }
 
 // 手机里有任何变动都刷一次注入，让主线立刻跟上
@@ -2099,7 +2130,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.1 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
