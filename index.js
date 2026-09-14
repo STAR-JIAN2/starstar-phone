@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.14.3
+ * v0.14.4
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -498,7 +498,28 @@ function stripPreset(raw) {
     if (cs && cs.length) t = cs.map(x => x.replace(/<\/?content>/gi, '')).join('\n');
     // 剩下的单独成行的标签（<Scene_NO>…、状态栏残骸）也扫掉
     t = t.replace(/^\s*<\/?[A-Za-z_\u4e00-\u9fa5][^>\n]*>\s*$/gm, '');
-    return t.trim();
+    return dropJailbreakPrefix(t.trim());
+}
+
+// 越狱预设（或中转自带的越狱）常让模型在开头先说一句无关的英文来绕过拒答，
+// 比如 "lol fuck off, anyway—"。正文是中文时，开头那行纯英文基本可以断定是噪音。
+// 判据收得紧一点：第一行、不含中文、不含方括号（免得误伤 [语音：…] 这种）、
+// 不太长，而且后面确实还有中文内容。
+function dropJailbreakPrefix(raw) {
+    const cjk = x => /[\u4e00-\u9fa5]/.test(x);
+    const lines = String(raw).split('\n');
+    let dropped = 0;
+    while (lines.length > 1 && dropped < 2) {
+        const first = lines[0].trim();
+        if (!first) { lines.shift(); continue; }
+        const rest = lines.slice(1).join('\n');
+        if (!cjk(first) && first.length < 80 && !/[\[\]]/.test(first) && cjk(rest)) {
+            console.warn(`[${MODULE_NAME}] 丢掉开头一行越狱噪音：`, first);
+            lines.shift(); dropped++; continue;
+        }
+        break;
+    }
+    return lines.join('\n').trim();
 }
 
 /* ---------- 工具调用：尽量绕开预设 ----------
@@ -2031,7 +2052,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.3 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.4 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
