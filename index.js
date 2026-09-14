@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.5
+ * v0.15.6
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -90,7 +90,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     tellStickers: 'all',                                 // 告诉 AI 哪些表情可用：all 全部 / custom 只补自定义 / off 不说
 });
 
-const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0, queue: [] };
+const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0, queue: [], epoch: 0 };
 
 /* ---------- 基础 ---------- */
 function ctx() { return window.SillyTavern.getContext(); }
@@ -183,8 +183,10 @@ function chatOf(id) { const m = allChats(); if (!Array.isArray(m[id])) m[id] = [
 function phoneChat() { return chatOf(state.activeId || CHAR_ID); }   // 当前打开的会话
 function memChat() { return chatOf(CHAR_ID); }                        // 记忆回流只看主角色那条线
 
-function contactById(id) { return contacts().find(c => c.id === id) || contacts()[0]; }
-function activeContact() { return contactById(state.activeId || CHAR_ID); }
+// 找不到就返回 undefined。以前兜底返回第一个联系人（主角色），
+// 结果「排队的回复的那个人被删了」会把消息发到主角色头上。
+function contactById(id) { return contacts().find(c => c.id === id); }
+function activeContact() { return contactById(state.activeId || CHAR_ID) || contacts()[0]; }
 function isCharContact(ct) { return !!ct && ct.id === CHAR_ID; }
 // 分层取值：联系人自己填了就用自己的，留空就往上一层（这张卡 → 全局）要
 function ctName(ct) { return (ct && ct.name) || (isCharContact(ct) ? charName() : 'TA'); }
@@ -237,8 +239,12 @@ function addContact({ name, avatar, persona, statusText }) {
 function delContact(id) {
     if (id === CHAR_ID) { toast('info', '主角色不能删掉哦'); return; }
     const cm = ctx().chatMetadata;
-    cm[CONTACTS_KEY] = contacts().filter(c => c.id !== id);
+    const rest = contacts().filter(c => c.id !== id);
+    // 把这个人从所有群的成员里摘掉，不然群里留一个指向不存在的人的 id
+    for (const g of rest) if (g.type === 'group' && Array.isArray(g.members)) g.members = g.members.filter(x => x !== id);
+    cm[CONTACTS_KEY] = rest;
     const m = allChats(); delete m[id];
+    state.queue = state.queue.filter(x => x !== id);   // 排队里也别留着
     persist();
 }
 
@@ -442,7 +448,7 @@ function renderInline(raw, isUser) {
 
     for (const [name, url] of Object.entries(allStickers())) {
         const safe = name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        html = html.replace(new RegExp(`\\[${safe}\\]`, 'g'), `<img src="${url}" class="sticker-img" style="vertical-align:middle;display:inline-block;">`);
+        html = html.replace(new RegExp(`\\[${safe}\\]`, 'g'), `<img src="${esc(url)}" class="sticker-img" style="vertical-align:middle;display:inline-block;">`);
     }
     html = html.replace(/\[语音[：:]\s*(.*?)\]/g, (m, c) => {
         const p = c.split(/[|｜]/); let dur = '10"', txt = '（点击播放语音）';
@@ -495,14 +501,14 @@ function contentToHtml(content, isUser) {
     if (/^(语音|定位|天气|链接|图片|外卖|代付|转账)[：:]/.test(inner)) return { kind: 'component', html: renderInline(`[${inner}]`, isUser) };
     const name = inner.replace(/^\d+\./, '');
     const AS = allStickers();
-    if (AS[name]) return { kind: 'sticker', html: `<img src="${AS[name]}" class="sticker-img">` };
+    if (AS[name]) return { kind: 'sticker', html: `<img src="${esc(AS[name])}" class="sticker-img">` };
     // AI 常写成「表情包：摸头.jpg」「[表情：抱抱]」这种，扒掉外壳再查一次
     const alt = name
         .replace(/^(表情包|表情|贴图|sticker)\s*[：:]\s*/i, '')
         .replace(/\.(jpg|jpeg|png|gif|webp)$/i, '')
         .trim();
     if (alt && alt !== name) {
-        if (AS[alt]) return { kind: 'sticker', html: `<img src="${AS[alt]}" class="sticker-img">` };
+        if (AS[alt]) return { kind: 'sticker', html: `<img src="${esc(AS[alt])}" class="sticker-img">` };
         // 查不到就至少别把文件名那一坨原样摆出来
         return { kind: 'bubble', html: `<div class="bubble ${bubbleClass}">${renderInline(alt, isUser)}</div>` };
     }
@@ -785,6 +791,8 @@ async function askReply(targetId) {
     const c = ctx(); const list = chatOf(id);
     if (!list.length) { toast('info', '先发条消息给TA吧～'); return; }
     state.generating = true; if (roomVisible(id)) showTyping();
+    const ep = state.epoch;
+    const alive = () => state.epoch === ep;   // 中途换了酒馆聊天就作废
     let replied = false;
     const me = (c.name1 || '我').trim();
     const ta = ctName(ct);
@@ -801,6 +809,7 @@ async function askReply(targetId) {
         const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
         hideTyping();
         const text = stripPreset(raw);
+        if (!alive()) { console.warn(`[${MODULE_NAME}] 生成期间换了聊天，这次回复丢弃`); return; }
         if (!text) { toast('warning', '没收到回复，检查下酒馆的API连接？'); return; }
         const parsed = parseCharPayload(text);
         const status = parsed.status;
@@ -822,6 +831,7 @@ async function askReply(targetId) {
             for (const part of items) {           // 逐条延迟弹出
                 if (visible()) showTyping();          // visible() 就是 roomVisible(ct.id)
                 await sleep(500); hideTyping();
+                if (!alive()) break;
                 const item = { id: genId(), role: 'char', text: part, ts: Date.now(), st: tick(first) };
                 first = false;
                 chatOf(ct.id).push(item); if (visible()) renderOne(false, part, item.id, msgTime(item));
@@ -851,6 +861,8 @@ async function askGroupReply(targetId) {
     if (!ms.length) { toast('warning', '这个群里还没有人，去右上角 ⋯ 里加几个'); return; }
     if (!list.length) { toast('info', '先在群里说句话吧～'); return; }
     state.generating = true; if (roomVisible(id)) showTyping();
+    const ep = state.epoch;
+    const alive = () => state.epoch === ep;   // 中途换了酒馆聊天就作废
     const me = (c.name1 || '我').trim();
     const nameOf = m => m.role === 'user' ? me : (m.who ? ctName(contactById(m.who)) : '旁白');
     const recent = list.slice(-24).map(m => `${nameOf(m)}：${m.text}`).join('\n');
@@ -865,6 +877,7 @@ async function askGroupReply(targetId) {
         const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
         hideTyping();
         const text = stripPreset(raw);
+        if (!alive()) { console.warn(`[${MODULE_NAME}] 生成期间换了聊天，这次群聊回复丢弃`); return; }
         if (!text) { toast('warning', '没收到回复，检查下酒馆的API连接？'); return; }
         let rows = parseGroupPayload(text, ms);
         if (!ctNarration(ct) && rows.length) { const pure = rows.filter(r => r.who); if (pure.length) rows = pure; }
@@ -874,6 +887,7 @@ async function askGroupReply(targetId) {
         for (const row of rows) {
             if (visible()) showTyping();
             await sleep(450); hideTyping();
+            if (!alive()) break;
             const item = { id: genId(), role: 'char', who: row.who || null, text: row.text, ts: Date.now(), st: gTick(gFirst) };
             gFirst = false;
             chatOf(ct.id).push(item);
@@ -902,6 +916,9 @@ function hashStr(t) {
 function pickedSet() {
     const cm = ctx().chatMetadata;
     if (!cm[PICKED_KEY] || typeof cm[PICKED_KEY] !== 'object') cm[PICKED_KEY] = {};
+    const keys = Object.keys(cm[PICKED_KEY]);
+    // 聊久了这表会一直涨，留最近的就够——太老的块不可能再被 swipe 出来
+    if (keys.length > 400) for (const k of keys.slice(0, keys.length - 200)) delete cm[PICKED_KEY][k];
     return cm[PICKED_KEY];
 }
 // [手机]…[/手机]，中间的 |状态|时间 有没有都认
@@ -1609,7 +1626,7 @@ function saveCSet() {
     const nv = val('#tp-cs-narr'); ct.narration = nv === 'inherit' ? null : (nv === 'on');
     if (isGroup(ct)) {
         const picked = pickedMembers('tp-cs-members');
-        if (picked.length < 2) { toast('warning', '群里至少要留两个人'); return; }
+        if (!picked.length) { toast('warning', '群里至少要留一个人'); return; }
         ct.members = picked;
     }
     persist(); renderChatList(); renderHeader(); applyWallpaper(); loadHistory(); applyFabAvatar();
@@ -2160,7 +2177,10 @@ function init() {
         console.warn(`[${MODULE_NAME}] 这个酒馆版本没有 MESSAGE_RECEIVED 事件，接管正文的功能用不了`);
     }
     c.eventSource.on(c.event_types.CHAT_CHANGED, () => {
-        // 换了酒馆聊天＝换了一套联系人，退回列表重新来
+        // 换了酒馆聊天＝换了一套联系人，退回列表重新来。
+        // epoch 往前推一格，正在跑的生成发现对不上就把结果丢掉，
+        // 不然回复会落进新聊天的会话里（chatOf 是按当前 chatMetadata 取的）。
+        state.epoch++; state.queue.length = 0;
         state.activeId = CHAR_ID; state.view = 'list';
         try { seedFromCard(false); } catch (e) { console.error(`[${MODULE_NAME}] 读卡预设失败`, e); }
         applySettings(); applyMemInjection(phoneMem().summary);
@@ -2169,7 +2189,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.5 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.6 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
