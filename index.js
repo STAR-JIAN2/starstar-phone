@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.12.0
+ * v0.13.0
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -15,6 +15,7 @@ const DEFAULT_NPC_AVATAR = 'https://card-site-c1a.pages.dev/api/file/media/2026-
 
 const CONTACTS_KEY = 'tp_contacts';       // 联系人列表（按本轮聊天隔离，和手机聊天一致）
 const CHATS_KEY = 'tp_chats';             // { 联系人id: [消息] }
+const PICKED_KEY = 'tp_picked';           // 已经从正文吸过的块（防 swipe 重roll 时重复吸）
 const CHAR_ID = 'char';                   // 主角色固定占这个 id，名字/头像跟着角色卡走
 
 // 功能区贴图。想换图在「设置 → 功能区图标」里填链接即可（所有卡通用）。
@@ -79,6 +80,10 @@ const DEFAULT_SETTINGS = Object.freeze({
     actionIcons: {},                                     // 功能区图标覆盖：{ voice: 'https://…' }
     perChar: {},                                         // 每张角色卡各自的那份：{ 卡标识: { charAvatar, wallpaper, … } }
     utilProfile: '',                                     // 工具调用（总结/生成NPC）走哪个连接配置，空＝跟随当前预设
+    pickup: true,                                        // 把正文里 AI 写的 [手机]…[/手机] 吸进小手机
+    pickupStrip: true,                                   // 吸走之后，正文里那段抹掉
+    liveInject: true,                                    // 把最近几条手机原文实时告诉主线
+    liveCount: 8,                                        // 告诉主线最近几条
 });
 
 const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0 };
@@ -566,7 +571,7 @@ function hideTyping() { const t = document.getElementById('tp-typing'); if (t) t
 function pushUser(text) {
     const t = String(text).trim(); if (!t) return;
     const item = { id: genId(), role: 'user', text: t, ts: Date.now() };
-    phoneChat().push(item); renderOne(true, t, item.id, item.ts); persist(); renderChatList();
+    phoneChat().push(item); renderOne(true, t, item.id, item.ts); persist(); renderChatList(); refreshInjection();
 }
 
 async function askReply() {
@@ -616,7 +621,7 @@ async function askReply() {
             }
         }
         if (!visible()) { ct.unread = (ct.unread || 0) + 1; recountBadge(); }
-        persist(); replied = true; renderChatList();
+        persist(); replied = true; renderChatList(); refreshInjection();
     } catch (e) {
         hideTyping(); console.error(`[${MODULE_NAME}] 生成失败`, e); toast('error', '生成失败，看看酒馆是否已连接API');
     } finally { state.generating = false; hideTyping(); if (replied && isCharContact(ct)) maybeSummarize(); }
@@ -661,6 +666,100 @@ async function askGroupReply() {
     } catch (e) {
         hideTyping(); console.error(`[${MODULE_NAME}] 群聊生成失败`, e); toast('error', '生成失败，看看酒馆是否已连接API');
     } finally { state.generating = false; hideTyping(); }
+}
+
+// 手机里有任何变动都刷一次注入，让主线立刻跟上
+function refreshInjection() {
+    try { applyMemInjection(phoneMem().summary); } catch (e) { console.warn(`[${MODULE_NAME}] 刷新注入失败`, e); }
+}
+
+/* ---------- 接管正文里的 [手机] 块 ----------
+   AI 在正文里写的 [手机][对|吃饭了吗][/手机]，这里把它搬进小手机，正文里抹掉。
+   没装这个扩展的人，那段会照旧留在正文里给正则渲染——两边用同一张卡互不影响。 */
+function hashStr(t) {
+    let h = 0; const x = String(t);
+    for (let i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0;
+    return h.toString(36);
+}
+function pickedSet() {
+    const cm = ctx().chatMetadata;
+    if (!cm[PICKED_KEY] || typeof cm[PICKED_KEY] !== 'object') cm[PICKED_KEY] = {};
+    return cm[PICKED_KEY];
+}
+// [手机]…[/手机]，中间的 |状态|时间 有没有都认
+const PHONE_BLOCK_RE = /\[手机(?:\|([^|\]\n]*))?(?:\|([^|\]\n]*))?\]([\s\S]*?)\[\/手机\]/g;
+
+// 把一个块里的行拆成消息
+function parseBlockLines(body, existing) {
+    const out = [];
+    const recentUser = existing.slice(-20).filter(m => m.role === 'user').map(m => m.text);
+    String(body).split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+        const nar = line.match(/^\[旁白[：:|]\s*([\s\S]*?)\]$/);
+        if (nar) { const t = nar[1].trim(); if (t) out.push({ role: 'char', text: `[旁白：${t}]` }); return; }
+        const ta = line.match(/^\[对\|([\s\S]*)\]$/);
+        if (ta) { const t = ta[1].trim(); if (t) out.push({ role: 'char', text: t }); return; }
+        const me = line.match(/^\[我\|([\s\S]*)\]$/);
+        if (me) {
+            const t = me[1].trim();
+            // AI 经常把你已经发过的话复述一遍，重复的就别再进一次
+            if (t && !recentUser.includes(t)) out.push({ role: 'user', text: t });
+        }
+    });
+    return out;
+}
+
+async function pickupFromMainline(mesId) {
+    const s = getSettings(); if (!s.pickup) return;
+    const c = ctx();
+    const msg = c.chat && c.chat[mesId];
+    if (!msg || msg.is_user || msg.is_system) return;
+    const raw = String(msg.mes || '');
+    if (!/\[\/手机\]/.test(raw)) return;
+
+    PHONE_BLOCK_RE.lastIndex = 0;
+    const blocks = Array.from(raw.matchAll(PHONE_BLOCK_RE));
+    if (!blocks.length) return;
+
+    const picked = pickedSet();
+    const ct = contactById(CHAR_ID);
+    const list = chatOf(CHAR_ID);
+    let added = 0, status = '';
+
+    for (const b of blocks) {
+        const key = hashStr(b[0]);
+        if (picked[key]) continue;          // swipe 重roll 过来的同一段，别吸第二遍
+        picked[key] = 1;
+        if (b[1] && b[1].trim()) status = b[1].trim();
+        for (const row of parseBlockLines(b[3], list)) {
+            const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), fromStory: true };
+            list.push(item); added++;
+        }
+    }
+    if (!added) { await maybeStripBlocks(mesId, msg, raw); return; }
+
+    if (status) ct.statusText = ct.statusText || '';   // 状态只用于当次显示，不落库
+    const inRoom = state.panelOpen && state.activeId === CHAR_ID && state.view === 'room';
+    if (inRoom) { loadHistory(); if (status) setStatus(status); }
+    else { ct.unread = (ct.unread || 0) + added; recountBadge(); }
+
+    await maybeStripBlocks(mesId, msg, raw);
+    await persist(); renderChatList(); refreshInjection();
+    console.log(`[${MODULE_NAME}] 从正文吸走 ${added} 条手机消息`);
+    toast('info', `手机里来了 ${added} 条新消息`);
+}
+
+// 把正文里那段抹掉（内容已经存进手机了，不会丢）
+async function maybeStripBlocks(mesId, msg, raw) {
+    const s = getSettings(); if (!s.pickupStrip) return;
+    PHONE_BLOCK_RE.lastIndex = 0;
+    let cleaned = raw.replace(PHONE_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+    if (cleaned === raw.trim()) return;
+    if (!cleaned) cleaned = '*📱 手机上来了条消息*';
+    msg.mes = cleaned;
+    if (Array.isArray(msg.swipes) && msg.swipe_id != null && msg.swipes[msg.swipe_id] != null) msg.swipes[msg.swipe_id] = cleaned;
+    const c = ctx();
+    try { if (typeof c.updateMessageBlock === 'function') c.updateMessageBlock(mesId, msg); } catch (e) {}
+    try { if (typeof c.saveChat === 'function') await c.saveChat(); } catch (e) { console.warn(`[${MODULE_NAME}] 保存楼层失败`, e); }
 }
 
 /* ---------- 记忆总结回流世界书（手机 ↔ 主线打通） ---------- */
@@ -742,15 +841,20 @@ function applyMemInjection(summary) {
     const c = ctx();
     if (typeof c.setExtensionPrompt !== 'function') { console.warn(`[${MODULE_NAME}] 无 setExtensionPrompt，无法直接注入`); return false; }
     try {
-        const s = String(summary || '').trim();
-        if (!s) { c.setExtensionPrompt(MEM_INJECT_KEY, '', 1, 1, false, 0); return true; }
+        const st = getSettings();
+        const sum = String(summary || '').trim();
         const me = (c.name1 || '我').trim(); const ta = charName();
-        // 带上最近几条手机原文，让角色能记起具体内容（表情/原话），而不只是被压扁的梗概
+        // 实时原文：不用等总结，你在手机上说完主线立刻就知道
         const list = memChat();
-        const recent = list.slice(-8).map(m => `${m.role === 'user' ? me : ta}：${m.text}`).join('\n');
-        const text = `【手机聊天·剧情连续性·重要】${me}和${ta}刚刚在手机上聊过，${ta}理应清楚记得下面的内容；主线对话请自然衔接，绝不能表现得毫不知情或矢口否认。\n梗概：${s}${recent ? `\n最近原文：\n${recent}` : ''}`;
+        const n = clamp(parseInt(st.liveCount, 10) || 8, 1, 30);
+        const recent = (st.liveInject && list.length) ? list.slice(-n).map(m => `${m.role === 'user' ? me : ta}：${m.text}`).join('\n') : '';
+        if (!sum && !recent) { c.setExtensionPrompt(MEM_INJECT_KEY, '', 1, 1, false, 0); return true; }
+        const parts = [];
+        if (sum) parts.push(`梗概：${sum}`);
+        if (recent) parts.push(`最近原文：\n${recent}`);
+        const text = `【手机聊天·剧情连续性·重要】${me}和${ta}刚刚在手机上聊过，${ta}理应清楚记得下面的内容；主线对话请自然衔接，绝不能表现得毫不知情或矢口否认。\n${parts.join('\n')}`;
         c.setExtensionPrompt(MEM_INJECT_KEY, text, 1, 1, false, 0); // IN_CHAT(1)、紧贴当前楼层(depth1)、SYSTEM(0)
-        console.log(`[${MODULE_NAME}] 已注入主线记忆(梗概${s.length}字 + 最近${Math.min(list.length, 8)}条原文)`);
+        console.log(`[${MODULE_NAME}] 已注入主线(梗概${sum.length}字 + 实时${recent ? Math.min(list.length, n) : 0}条)`);
         return true;
     } catch (e) { console.error(`[${MODULE_NAME}] 注入失败`, e); return false; }
 }
@@ -1282,6 +1386,10 @@ function applySettings() {
     if (q('#tp-set-font')) q('#tp-set-font').value = s.font;
     const sw = q('#tp-set-narr'); if (sw) sw.classList.toggle('on', !!sv('narration'));
     const msw = q('#tp-set-mem'); if (msw) msw.classList.toggle('on', !!s.memEnabled);
+    const psw = q('#tp-set-pickup'); if (psw) psw.classList.toggle('on', !!s.pickup);
+    const ssw = q('#tp-set-strip'); if (ssw) ssw.classList.toggle('on', !!s.pickupStrip);
+    const lsw = q('#tp-set-live'); if (lsw) lsw.classList.toggle('on', !!s.liveInject);
+    if (q('#tp-set-livecount')) q('#tp-set-livecount').value = s.liveCount || 8;
     if (q('#tp-set-memtarget')) q('#tp-set-memtarget').value = s.memTarget || 'chat';
     if (q('#tp-set-memevery')) q('#tp-set-memevery').value = s.memEvery || 6;
     const up = q('#tp-set-utilprofile');
@@ -1312,6 +1420,7 @@ function saveFromForm() {
     s.memTarget = q('#tp-set-memtarget') ? q('#tp-set-memtarget').value : s.memTarget;
     if (q('#tp-set-memevery')) s.memEvery = clamp(parseInt(q('#tp-set-memevery').value, 10) || 6, 2, 50);
     if (q('#tp-set-utilprofile')) s.utilProfile = q('#tp-set-utilprofile').value;
+    if (q('#tp-set-livecount')) s.liveCount = clamp(parseInt(q('#tp-set-livecount').value, 10) || 8, 1, 30);
     if (!s.actionIcons || typeof s.actionIcons !== 'object') s.actionIcons = {};
     for (const k of Object.keys(ACTION_ICONS)) { const el = q('#tp-ico-' + k); if (el) { const v = el.value.trim(); if (v) s.actionIcons[k] = v; else delete s.actionIcons[k]; } }
     saveSettings(); applySettings(); loadHistory();
@@ -1500,6 +1609,13 @@ function buildPanelHTML() {
                   <button class="tp-mem-btn" id="tp-card-load" style="margin-top:6px;">从卡里读回预设</button>
                 </div>
                 <div class="tp-hint">写进去的是联系人、群聊、头像、壁纸、人设这些「设定」，<b>不含聊天记录</b>，也不含你自己的头像。别人导入这张卡、开一个新聊天时会自动铺上。</div>
+                <div class="tp-mem-divider">📲 和正文联动</div>
+                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">接管正文里的手机消息</label><div class="tp-switch" id="tp-set-pickup"></div></div></div>
+                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">接管后抹掉正文里那段</label><div class="tp-switch" id="tp-set-strip"></div></div></div>
+                <div class="tp-hint">AI 在正文里写 <code>[手机]…[/手机]</code> 的时候，那段会被搬进小手机、正文里抹掉，悬浮球亮红点。没装这个扩展的人不受影响，正文里照旧显示。</div>
+                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">把手机对话实时告诉主线</label><div class="tp-switch" id="tp-set-live"></div></div></div>
+                <div class="tp-set-group"><label class="tp-set-label">告诉主线最近几条</label><input class="tp-set-input" id="tp-set-livecount" type="number" min="1" max="30"></div>
+                <div class="tp-hint">开着的话，你在手机上说的话不用等总结，主线立刻就知道，TA 在正文里能直接接上。</div>
                 <div class="tp-mem-divider">📱 记忆回流 · 让主线知道手机聊了啥</div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">开启记忆回流</label><div class="tp-switch" id="tp-set-mem"></div></div></div>
                 <div class="tp-set-group"><label class="tp-set-label">回流到哪本世界书</label><select class="tp-set-input" id="tp-set-memtarget"><option value="chat">本轮聊天专属（推荐）</option><option value="char">角色主世界书</option></select></div>
@@ -1595,6 +1711,19 @@ function bindEvents() {
     document.getElementById('tp-save').addEventListener('click', saveFromForm);
     document.getElementById('tp-set-narr').addEventListener('click', function () { const pc = charSet(); pc.narration = !sv('narration'); this.classList.toggle('on', !!pc.narration); saveSettings(); applySettings(); });
     document.getElementById('tp-set-mem').addEventListener('click', function () { const s = getSettings(); s.memEnabled = !s.memEnabled; this.classList.toggle('on', s.memEnabled); saveSettings(); });
+    // 几个全局开关
+    const bindSwitch = (id, key, after) => {
+        const el = document.getElementById(id); if (!el) return;
+        el.addEventListener('click', function () {
+            const st = getSettings(); st[key] = !st[key];
+            this.classList.toggle('on', !!st[key]); saveSettings();
+            if (after) after();
+        });
+    };
+    bindSwitch('tp-set-pickup', 'pickup');
+    bindSwitch('tp-set-strip', 'pickupStrip');
+    bindSwitch('tp-set-live', 'liveInject', refreshInjection);
+
     document.getElementById('tp-mem-now').addEventListener('click', () => summarizeAndFlow(true));
     document.getElementById('tp-mem-clear').addEventListener('click', clearMem);
     document.getElementById('tp-card-save').addEventListener('click', saveToCard);
@@ -1665,6 +1794,13 @@ function init() {
     }
     const c = ctx();
     applyMemInjection(phoneMem().summary); // 恢复本轮聊天已有的记忆注入
+    if (c.event_types.MESSAGE_RECEIVED) {
+        c.eventSource.on(c.event_types.MESSAGE_RECEIVED, async (mesId) => {
+            try { await pickupFromMainline(mesId); } catch (e) { console.error(`[${MODULE_NAME}] 接管正文手机块失败`, e); }
+        });
+    } else {
+        console.warn(`[${MODULE_NAME}] 这个酒馆版本没有 MESSAGE_RECEIVED 事件，接管正文的功能用不了`);
+    }
     c.eventSource.on(c.event_types.CHAT_CHANGED, () => {
         // 换了酒馆聊天＝换了一套联系人，退回列表重新来
         state.activeId = CHAR_ID; state.view = 'list';
@@ -1675,7 +1811,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.12.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
