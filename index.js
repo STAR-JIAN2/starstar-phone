@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.14.1
+ * v0.14.2
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -814,26 +814,58 @@ function findPhoneBlocks(raw) {
     }
     return out;
 }
-// 按下标切掉，不用 replace——正则重扫可能又匹配到别处
+// 块外面落单的 [对|…] / [我|…]。预设有时候会漏掉收尾的 [/手机] 就接着往下写，
+// 这些行留在正文里就是一串裸露的方括号。只在「本条消息已经有完整块」时才收，避免误伤。
+function findLooseLines(raw, blocks) {
+    const masked = maskNonStory(raw);
+    const covered = (i, len) => blocks.some(b => i < b.index + b.length && i + len > b.index);
+    const out = [];
+    let pos = 0;
+    for (const line of masked.split('\n')) {
+        const idx = pos; pos += line.length + 1;
+        if (!line.trim()) continue;
+        if (covered(idx, line.length)) continue;
+        const real = raw.slice(idx, idx + line.length);
+        const m = parseMsgLine(real);
+        // 只收 [对|…] 和 [我|…]，不收 [旁白：…]——块外的旁白是主线小说正文
+        if (m && /^\[(对|我)\|/.test(real.trim())) out.push({ index: idx, length: line.length, msg: m });
+    }
+    return out;
+}
+
+// 按下标替换：ranges 里每段可以带 replacement，没带就是直接切掉
 function cutRanges(raw, ranges) {
     let out = '', pos = 0;
-    for (const r of ranges) { out += raw.slice(pos, r.index); pos = r.index + r.length; }
+    for (const r of ranges) {
+        out += raw.slice(pos, r.index) + (r.replacement || '');
+        pos = r.index + r.length;
+    }
     return out + raw.slice(pos);
 }
 
-// 把一个块里的行拆成消息
-function parseBlockLines(body) {
-    const out = [];
-    String(body).split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
-        const nar = line.match(/^\[旁白[：:|]\s*([\s\S]*?)\]$/);
-        if (nar) { const t = nar[1].trim(); if (t) out.push({ role: 'char', text: `[旁白：${t}]` }); return; }
-        const ta = line.match(/^\[对\|([\s\S]*)\]$/);
-        if (ta) { const t = ta[1].trim(); if (t) out.push({ role: 'char', text: t }); return; }
-        const me = line.match(/^\[我\|([\s\S]*)\]$/);
-        if (me) { const t = me[1].trim(); if (t) out.push({ role: 'user', text: t }); }
-    });
-    return out;
+// 一行是不是手机消息。是的话返回 {role,text}，不是返回 null
+function parseMsgLine(line) {
+    const t = String(line).trim(); if (!t) return null;
+    const nar = t.match(/^\[旁白[：:|]\s*([\s\S]*?)\]$/);
+    if (nar) { const x = nar[1].trim(); return x ? { role: 'char', text: `[旁白：${x}]` } : null; }
+    const ta = t.match(/^\[对\|([\s\S]*)\]$/);
+    if (ta) { const x = ta[1].trim(); return x ? { role: 'char', text: x } : null; }
+    const me = t.match(/^\[我\|([\s\S]*)\]$/);
+    if (me) { const x = me[1].trim(); return x ? { role: 'user', text: x } : null; }
+    return null;
 }
+
+// 把块拆成「要搬进手机的消息」和「要留在正文的叙事」。
+// 模型经常把大段描写直接写在 [手机]…[/手机] 里面，整块切掉的话那些描写就没了。
+function splitBlockBody(body) {
+    const msgs = [], kept = [];
+    String(body).split('\n').forEach(line => {
+        const m = parseMsgLine(line);
+        if (m) msgs.push(m); else kept.push(line);
+    });
+    return { msgs, kept: kept.join('\n').replace(/\n{3,}/g, '\n\n').trim() };
+}
+function parseBlockLines(body) { return splitBlockBody(body).msgs; }
 
 // 预设每次渲染手机，往往把之前的对话重放一遍再接新的。
 // 找出「块的开头」和「已有记录的结尾」最长的那段重叠，只收重叠之后的部分。
@@ -860,42 +892,63 @@ async function pickupFromMainline(mesId) {
 
     const blocks = findPhoneBlocks(raw);
     if (!blocks.length) return;
+    const loose = findLooseLines(raw, blocks);
 
     const picked = pickedSet();
     const ct = contactById(CHAR_ID);
     const list = chatOf(CHAR_ID);
     let added = 0, status = '';
 
-    for (const b of blocks) {
-        const key = hashStr(b.text);
-        if (picked[key]) continue;          // swipe 重roll 过来的同一段，别吸第二遍
-        picked[key] = 1;
-        if (b.status) status = b.status;
-        const rows = dropReplayed(parseBlockLines(b.body), list);
-        const tick = storyTicker(parseStoryTime(b.time, storyNow()));
-        rows.forEach((row, i) => {
-            const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), st: tick(i === 0), fromStory: true };
+    // 块和落单行按在原文里的先后顺序处理，保证进手机的顺序和正文一致
+    const ranges = [];
+    const units = blocks.map(b => ({ ...b, kind: 'block' }))
+        .concat(loose.map(l => ({ ...l, kind: 'line' })))
+        .sort((a, b) => a.index - b.index);
+
+    for (const u of units) {
+        if (u.kind === 'block') {
+            const key = hashStr(u.text);
+            const split = splitBlockBody(u.body);
+            // 块里不认识的行是正文叙事，原样留下，只把消息行搬走
+            ranges.push({ index: u.index, length: u.length, replacement: split.kept });
+            if (picked[key]) continue;      // swipe 重roll 过来的同一段，别吸第二遍
+            picked[key] = 1;
+            if (u.status) status = u.status;
+            const rows = dropReplayed(split.msgs, list);
+            const tick = storyTicker(parseStoryTime(u.time, storyNow()));
+            rows.forEach((row, i) => {
+                const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), st: tick(i === 0), fromStory: true };
+                list.push(item); added++;
+            });
+        } else {
+            const key = hashStr('line:' + u.msg.role + u.msg.text);
+            ranges.push({ index: u.index, length: u.length, replacement: '' });
+            if (picked[key]) continue;
+            picked[key] = 1;
+            const rows = dropReplayed([u.msg], list);
+            if (!rows.length) continue;
+            const item = { id: genId(), role: u.msg.role, text: u.msg.text, ts: Date.now(), st: storyTicker(0)(true), fromStory: true };
             list.push(item); added++;
-        });
+        }
     }
-    if (!added) { await maybeStripBlocks(mesId, msg, raw, blocks); return; }
+    if (!added) { await maybeStripBlocks(mesId, msg, raw, ranges); return; }
 
     if (status) setStatus(status, ct);
     const inRoom = state.panelOpen && state.activeId === CHAR_ID && state.view === 'room';
     if (inRoom) loadHistory();
     else { ct.unread = (ct.unread || 0) + added; recountBadge(); }
 
-    await maybeStripBlocks(mesId, msg, raw, blocks);
+    await maybeStripBlocks(mesId, msg, raw, ranges);
     await persist(); renderChatList(); refreshInjection();
     console.log(`[${MODULE_NAME}] 从正文吸走 ${added} 条手机消息`);
     toast('info', `手机里来了 ${added} 条新消息`);
 }
 
 // 把正文里那段抹掉（内容已经存进手机了，不会丢）
-async function maybeStripBlocks(mesId, msg, raw, blocks) {
+async function maybeStripBlocks(mesId, msg, raw, ranges) {
     const s = getSettings(); if (!s.pickupStrip) return;
-    if (!blocks || !blocks.length) return;
-    let cleaned = cutRanges(raw, blocks).replace(/\n{3,}/g, '\n\n').trim();
+    if (!ranges || !ranges.length) return;
+    let cleaned = cutRanges(raw, ranges).replace(/\n{3,}/g, '\n\n').trim();
     if (cleaned === raw.trim()) return;
     if (!cleaned) cleaned = '*📱 手机上来了条消息*';
     msg.mes = cleaned;
@@ -1973,7 +2026,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.1 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.2 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
