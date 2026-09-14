@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.14.2
+ * v0.14.3
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -381,8 +381,13 @@ function parseStoryTime(raw, prevMs) {
     const hh = clamp(+hm[1], 0, 23), mm = clamp(+hm[2], 0, 59);
     let ms = new Date(y, mo, d, hh, mm, 0, 0).getTime();
     if (isNaN(ms)) return 0;
-    // 没写日期又比上一条早，当成过了一天（比如 23:50 → 00:10）
-    if (!dated && prevMs && ms < prevMs - 60000) ms += 86400000;
+    // 没写日期又比上一条早，两种可能：真跨了午夜，或者模型报偏了。
+    // 挑跨度小的那个解释：23:50 → 00:10 加一天才差 20 分钟，是真跨天；
+    // 17:38 → 17:28 加一天要差 23 小时 50 分，那就是报偏了，别凭空多出一天。
+    if (!dated && prevMs && ms < prevMs) {
+        const rolled = ms + 86400000;
+        ms = (rolled - prevMs < 12 * 3600000) ? rolled : prevMs + 60000;
+    }
     return ms;
 }
 function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
@@ -2026,7 +2031,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.2 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.14.3 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
