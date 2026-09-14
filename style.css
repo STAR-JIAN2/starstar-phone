@@ -1,6 +1,6 @@
 /* ============================================================
    星星小手机 · SillyTavern 扩展
-   v0.15.6
+   v0.15.7
    ============================================================ */
 
 @font-face {
@@ -30,7 +30,21 @@
 .tp-root .msg-row.left { align-self: flex-start; margin-right: auto; }
 .tp-root .msg-row.right { align-self: flex-end; margin-left: auto; flex-direction: row-reverse; }
 .tp-root .msg-inner { display: flex; min-width: 0; }
-.tp-root .avatar { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.15); object-fit: cover; flex-shrink: 0; margin-top: 2px; }
+/* 原来叫 .avatar，和酒馆全局的 .avatar 撞名。酒馆那条写了 flex:1
+   （= grow:1 shrink:1 basis:0），我们只盖住了 shrink，grow 和 basis 还是它的，
+   于是一行里只要有空余宽度，头像就会被撑成扁的。
+   这里改成独占的类名，并且把宽高用 min/max 焊死，以后再有类似的外部样式也动不了它。 */
+.tp-root .tp-avatar {
+    width: 34px; height: 34px;
+    min-width: 34px; max-width: 34px;
+    min-height: 34px; max-height: 34px;
+    flex: 0 0 34px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%; border: 2px solid #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    object-fit: cover; margin-top: 2px;
+    box-sizing: content-box;
+}
 
 /* 删除单条按钮 */
 .tp-root .tp-del { position: absolute; top: -6px; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,90,95,0.92); color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity 0.15s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 5; }

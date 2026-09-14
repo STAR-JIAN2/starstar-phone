@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.6
+ * v0.15.7
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -618,7 +618,7 @@ function appendRow(isUser, r, mid, who) {
         const av = isUser ? ctUserAvatar(ct) : (speaker ? ctAvatar(speaker) : ctAvatar(ct));
         // 群里才在气泡上方标名字
         const tag = (!isUser && speaker && isGroup(ct)) ? `<div class="tp-speaker">${esc(ctName(speaker))}</div>` : '';
-        area.insertAdjacentHTML('beforeend', `<div class="tp-line msg-row ${side}" data-mid="${midAttr}"><img class="avatar" src="${esc(av)}"><div class="msg-inner">${tag}${r.html}</div>${del}</div>`);
+        area.insertAdjacentHTML('beforeend', `<div class="tp-line msg-row ${side}" data-mid="${midAttr}"><img class="tp-avatar" src="${esc(av)}"><div class="msg-inner">${tag}${r.html}</div>${del}</div>`);
     }
     area.scrollTop = area.scrollHeight;
 }
@@ -750,7 +750,7 @@ function showTyping() {
     const a = chatArea(); if (!a || document.getElementById('tp-typing')) return;
     const tct = activeContact();
     const tav = isGroup(tct) ? ctAvatar(groupMembers(tct)[0] || tct) : ctAvatar(tct);
-    a.insertAdjacentHTML('beforeend', `<div class="tp-line msg-row left tp-typing" id="tp-typing"><img class="avatar" src="${esc(tav)}"><div class="dots"><span></span><span></span><span></span></div></div>`);
+    a.insertAdjacentHTML('beforeend', `<div class="tp-line msg-row left tp-typing" id="tp-typing"><img class="tp-avatar" src="${esc(tav)}"><div class="dots"><span></span><span></span><span></span></div></div>`);
     a.scrollTop = a.scrollHeight;
 }
 function hideTyping() { const t = document.getElementById('tp-typing'); if (t) t.remove(); }
@@ -2189,7 +2189,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.6 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.7 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
