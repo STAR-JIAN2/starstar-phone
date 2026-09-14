@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.2
+ * v0.15.3
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -140,6 +140,12 @@ function sv(key) {
 }
 
 function allStickers() { const cs = getSettings().customStickers; return { ...STICKERS, ...(cs && typeof cs === 'object' ? cs : {}) }; }
+// 喂给 AI 的表情清单。不给的话它只能瞎编，编出来的名字对不上就渲染成一行文字。
+function stickerListForPrompt() {
+    const names = Object.keys(allStickers());
+    if (!names.length) return '';
+    return `\n\n【可以发的表情】\n${names.join('、')}\n想发表情就单独一行写 [名字]，名字必须是上面列表里的原话。不要自己编表情，也不要写成"表情包：xxx.jpg"这种。`;
+}
 
 /* ---------- 联系人 / 多会话 ---------- */
 // 联系人存在 chatMetadata 里，和手机聊天一样按本轮酒馆聊天隔离。
@@ -475,9 +481,19 @@ function contentToHtml(content, isUser) {
     if (/^旁白[：:]/.test(inner)) return { kind: 'narration', html: `<div class="tp-narration">${esc(inner.replace(/^旁白[：:]\s*/, ''))}</div>` };
     if (/^撤回[：:]/.test(inner)) return { kind: 'system', html: renderInline(`[${inner}]`, isUser) };
     if (/^(语音|定位|天气|链接|图片|外卖|代付|转账)[：:]/.test(inner)) return { kind: 'component', html: renderInline(`[${inner}]`, isUser) };
-    let name = inner.replace(/^\d+\./, '');
+    const name = inner.replace(/^\d+\./, '');
     const AS = allStickers();
     if (AS[name]) return { kind: 'sticker', html: `<img src="${AS[name]}" class="sticker-img">` };
+    // AI 常写成「表情包：摸头.jpg」「[表情：抱抱]」这种，扒掉外壳再查一次
+    const alt = name
+        .replace(/^(表情包|表情|贴图|sticker)\s*[：:]\s*/i, '')
+        .replace(/\.(jpg|jpeg|png|gif|webp)$/i, '')
+        .trim();
+    if (alt && alt !== name) {
+        if (AS[alt]) return { kind: 'sticker', html: `<img src="${AS[alt]}" class="sticker-img">` };
+        // 查不到就至少别把文件名那一坨原样摆出来
+        return { kind: 'bubble', html: `<div class="bubble ${bubbleClass}">${renderInline(alt, isUser)}</div>` };
+    }
     return { kind: 'bubble', html: `<div class="bubble ${bubbleClass}">${renderInline(c, isUser)}</div>` };
 }
 
@@ -768,7 +784,7 @@ async function askReply(targetId) {
     const who = isCharContact(ct) ? '' :
         `${ta}是${me}手机通讯录里的另一个人（不是${charName()}），请完全以${ta}的身份说话。` +
         (ct.persona ? `\n【${ta}的人设】\n${ct.persona}\n` : '');
-    const quiet = `以下是${ta}和${me}正在用手机聊天的场景。${who}请只以${ta}的身份、用适合手机即时通讯的口吻回复${me}的最新消息。可以分多条，每条单独占一行。${narr}不要复述${me}说的话，不要加引号或旁白式叙述。${groupContext(ct)}\n\n【手机里最近的对话】\n${recent}\n\n【现在轮到${ta}回复】`;
+    const quiet = `以下是${ta}和${me}正在用手机聊天的场景。${who}请只以${ta}的身份、用适合手机即时通讯的口吻回复${me}的最新消息。可以分多条，每条单独占一行。${narr}不要复述${me}说的话，不要加引号或旁白式叙述。${stickerListForPrompt()}${groupContext(ct)}\n\n【手机里最近的对话】\n${recent}\n\n【现在轮到${ta}回复】`;
     try {
         const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
         hideTyping();
@@ -832,7 +848,7 @@ async function askGroupReply(targetId) {
     const narr = ctNarration(ct)
         ? '可以在中间穿插旁白，单独一行写成 [旁白：内容]，写环境或某人的小动作。'
         : '不要写旁白、心理活动或动作描写，只发群里的聊天文字。';
-    const quiet = `这是一个手机群聊「${ctName(ct)}」，${me}也在群里。\n\n【群成员】\n${roster}${privateContext(ct)}\n\n请让群里的人接${me}的话。可以只有一个人说，也可以几个人你一言我一语。总共 2 到 6 条。\n严格按这个格式，每行一条，名字必须是上面列出来的那几个：\n名字：内容\n${narr}\n不要替${me}说话，不要加引号。\n\n【群里最近的消息】\n${recent}\n\n【现在群里的人接话】`;
+    const quiet = `这是一个手机群聊「${ctName(ct)}」，${me}也在群里。\n\n【群成员】\n${roster}${privateContext(ct)}\n\n请让群里的人接${me}的话。可以只有一个人说，也可以几个人你一言我一语。总共 2 到 6 条。\n严格按这个格式，每行一条，名字必须是上面列出来的那几个：\n名字：内容\n${narr}\n不要替${me}说话，不要加引号。${stickerListForPrompt()}\n\n【群里最近的消息】\n${recent}\n\n【现在群里的人接话】`;
     try {
         const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
         hideTyping();
@@ -2130,7 +2146,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.2 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.3 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
