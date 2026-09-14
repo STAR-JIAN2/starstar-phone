@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.1
+ * v0.15.2
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -459,7 +459,7 @@ function renderInline(raw, isUser) {
         return `<details class="link-card-container ${alignClass}"><summary class="link-card-preview ${glass}"><div class="link-icon-box ${iconBg}">🔗</div><div class="link-info"><div class="link-title">分享链接</div><div class="link-desc">点击查看</div></div></summary><div class="link-content ${glass}"><div class="link-content-inner"><div style="font-weight:bold;margin-bottom:5px;">${t}</div><div style="font-size:11px;color:#666;">${d}</div></div></div></details>`;
     });
     html = html.replace(/\[图片[：:]\s*(.*?)\]/g, (m, c) =>
-        `<details class="link-card-container ${alignClass}"><summary class="link-card-preview ${glass}"><div class="link-icon-box ${iconBg}">🖼️</div><div class="link-info"><div class="link-title">收到一张照片</div><div class="link-desc">点击查看详情...</div></div></summary><div class="link-content ${glass}"><div class="link-content-inner text-center"><div class="image-placeholder custom-bg"><div class="img-text" style="color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.8);">备注：${c}</div></div><div class="link-meta">Image Shared</div></div></div></details>`);
+        `<details class="link-card-container ${alignClass}"><summary class="link-card-preview ${glass}"><div class="link-icon-box ${iconBg}">🖼️</div><div class="link-info"><div class="link-title">收到一张照片</div><div class="link-desc">点击查看详情...</div></div></summary><div class="link-content ${glass}"><div class="link-content-inner text-center"><div class="image-placeholder custom-bg"><div class="img-text">${c}</div></div><div class="link-meta">Image Shared</div></div></div></details>`);
     html = html.replace(/\[撤回[：:]\s*([\s\S]*?)\]/g, (m, c) => {
         const who = isUser ? '你' : '对方'; const content = c.trim();
         return `<div class="tp-recall"><details class="recall-wrapper"><summary class="system-tip"><span>${who}撤回了一条消息</span>${content ? '<span class="tip-hint">(查看)</span>' : ''}</summary>${content ? `<div class="ghost-bubble">${content}</div>` : ''}</details></div>`;
@@ -2130,7 +2130,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.1 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.2 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
