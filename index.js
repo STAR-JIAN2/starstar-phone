@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.13.1
+ * v0.13.2
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -436,15 +436,17 @@ function hasCleanChannel() {
 }
 async function utilGenerate(prompt, maxTokens) {
     const c = ctx(); const pid = getSettings().utilProfile;
+    // 给得宽一点：推理模型会先烧掉一大截 token 在思考上，给少了正文会被截断
+    const cap = maxTokens || 1500;
     if (pid && hasCleanChannel()) {
         try {
-            const r = await c.ConnectionManagerRequestService.sendRequest(pid, prompt, maxTokens || 400);
+            const r = await c.ConnectionManagerRequestService.sendRequest(pid, prompt, cap);
             const t = typeof r === 'string' ? r : (r?.content ?? r?.message?.content ?? '');
             if (String(t).trim()) return String(t);
             console.warn(`[${MODULE_NAME}] 干净通道返回空，退回默认通道`);
         } catch (e) { console.warn(`[${MODULE_NAME}] 干净通道失败，退回默认通道`, e); }
     }
-    return await c.generateQuietPrompt({ quietPrompt: prompt, skipWIAN: true, responseLength: maxTokens || 400 });
+    return await c.generateQuietPrompt({ quietPrompt: prompt, skipWIAN: true, responseLength: cap });
 }
 // 一眼能看出是预设接管了的特征
 function looksHijacked(t) {
@@ -458,6 +460,8 @@ function readUtilReply(raw, tag) {
     const t = String(raw || '');
     const m = t.match(new RegExp('<' + tag + '>([\\s\\S]*?)<\\/' + tag + '>'));
     if (m) return { text: m[1].trim(), bad: '' };
+    // 开了信封却没收尾＝输出被截断了（推理模型很容易把额度烧在思考上）
+    if (new RegExp('<' + tag + '>').test(t)) return { text: '', bad: '输出被截断了' };
     if (looksHijacked(t)) return { text: '', bad: '被预设接管了' };
     return { text: stripPreset(t), bad: '' };
 }
@@ -729,22 +733,32 @@ function cutRanges(raw, ranges) {
 }
 
 // 把一个块里的行拆成消息
-function parseBlockLines(body, existing) {
+function parseBlockLines(body) {
     const out = [];
-    const recentUser = existing.slice(-20).filter(m => m.role === 'user').map(m => m.text);
     String(body).split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
         const nar = line.match(/^\[旁白[：:|]\s*([\s\S]*?)\]$/);
         if (nar) { const t = nar[1].trim(); if (t) out.push({ role: 'char', text: `[旁白：${t}]` }); return; }
         const ta = line.match(/^\[对\|([\s\S]*)\]$/);
         if (ta) { const t = ta[1].trim(); if (t) out.push({ role: 'char', text: t }); return; }
         const me = line.match(/^\[我\|([\s\S]*)\]$/);
-        if (me) {
-            const t = me[1].trim();
-            // AI 经常把你已经发过的话复述一遍，重复的就别再进一次
-            if (t && !recentUser.includes(t)) out.push({ role: 'user', text: t });
-        }
+        if (me) { const t = me[1].trim(); if (t) out.push({ role: 'user', text: t }); }
     });
     return out;
+}
+
+// 预设每次渲染手机，往往把之前的对话重放一遍再接新的。
+// 找出「块的开头」和「已有记录的结尾」最长的那段重叠，只收重叠之后的部分。
+function dropReplayed(rows, list) {
+    if (!rows.length || !list.length) return rows;
+    const key = m => m.role + '\u0001' + m.text;
+    const hist = list.map(key), cand = rows.map(key);
+    const max = Math.min(hist.length, cand.length);
+    for (let k = max; k > 0; k--) {
+        let ok = true;
+        for (let i = 0; i < k; i++) if (hist[hist.length - k + i] !== cand[i]) { ok = false; break; }
+        if (ok) return rows.slice(k);
+    }
+    return rows;
 }
 
 async function pickupFromMainline(mesId) {
@@ -768,7 +782,8 @@ async function pickupFromMainline(mesId) {
         if (picked[key]) continue;          // swipe 重roll 过来的同一段，别吸第二遍
         picked[key] = 1;
         if (b.status) status = b.status;
-        for (const row of parseBlockLines(b.body, list)) {
+        const rows = dropReplayed(parseBlockLines(b.body), list);
+        for (const row of rows) {
             const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), fromStory: true };
             list.push(item); added++;
         }
@@ -941,7 +956,7 @@ async function summarizeAndFlow(manual = false) {
     const prev = mem.summary ? `【已有的手机记忆摘要】\n${mem.summary}\n\n` : '';
     const quiet = `${UTIL_GUARD}你是剧情记录员。下面是${me}和${ta}用手机聊天的新增内容。请把它整合进已有摘要，输出一份更新后的、第三人称、简洁的“手机聊天记忆”，只保留主线剧情需要知道的：发生了什么、约定了什么、情绪和关系的变化、提到的计划或事实。不要逐句复述，不要写对话原文，不要加引号。\n\n输出格式（严格遵守，整个回复只有这三行）：\n<摘要>\n这里写摘要，150字以内\n</摘要>\n\n${prev}【新增手机聊天】\n${convo}`;
     try {
-        const raw = await utilGenerate(quiet, 400);
+        const raw = await utilGenerate(quiet, 1500);
         const got = readUtilReply(raw, '摘要');
         const summary = got.text.replace(/^手机(聊天)?记忆[:：]?\s*/, '').replace(/^摘要[:：]\s*/, '').trim();
         // 这段每轮都要注进主线，宁可不写，也不能把预设吐出来的小说写进去
@@ -952,7 +967,9 @@ async function summarizeAndFlow(manual = false) {
             : '';
         if (bad) {
             console.warn(`[${MODULE_NAME}] 摘要不合格（${bad}），已丢弃，原始返回：`, String(raw || '').slice(0, 500));
-            toast('warning', `回流已跳过：模型没给出摘要（${bad}）。去设置里给「工具调用」选一个干净的连接配置试试。`);
+            toast('warning', bad === '输出被截断了'
+                ? '回流已跳过：模型输出被截断。你选的工具接口可能是推理模型，换个不带思考的模型试试。'
+                : `回流已跳过：模型没给出摘要（${bad}）。去设置里给「工具调用」选一个干净的连接配置试试。`);
             return;
         }
 
@@ -1237,7 +1254,7 @@ async function aiGenerateNpc() {
     state.generating = true; toast('info', '让 AI 想一个…');
     const quiet = `${UTIL_GUARD}请为${me}的手机通讯录设计一个新的联系人（一个配角NPC，不是${main}本人），要贴合当前剧情和世界观。已有的人：${exist}，不要重名。\n\n输出格式（严格遵守，整个回复只有这五行）：\n<NPC>\n名字：（2-4个字）\n状态：（很短的一句在线状态，10字以内）\n人设：（TA是谁、和${me}是什么关系、说话风格，80字以内，写成一段）\n</NPC>`;
     try {
-        const got = readUtilReply(await utilGenerate(quiet, 300), 'NPC');
+        const got = readUtilReply(await utilGenerate(quiet, 1200), 'NPC');
         if (got.bad) { toast('warning', `生成失败：${got.bad}。去设置里给「工具调用」选一个干净的连接配置。`); return; }
         const raw = got.text;
         const g = re => { const m = raw.match(re); return m ? m[1].trim().replace(/^[「『"“]+|[」』"”]+$/g, '') : ''; };
@@ -1849,7 +1866,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.1 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.2 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
