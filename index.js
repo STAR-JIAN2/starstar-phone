@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.13.0
+ * v0.13.1
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -689,6 +689,45 @@ function pickedSet() {
 // [手机]…[/手机]，中间的 |状态|时间 有没有都认
 const PHONE_BLOCK_RE = /\[手机(?:\|([^|\]\n]*))?(?:\|([^|\]\n]*))?\]([\s\S]*?)\[\/手机\]/g;
 
+// 思维链和 HTML 注释里经常提到 [手机|状态|时间] 这种格式说明。直接全文找的话，
+// 会从思维链那句开始一路匹配到正文真正的 [/手机]，把中间整段正文吃掉。
+// 所以先把这些区域用等长空格盖掉（下标不变），只在剩下的正文里找。
+function maskNonStory(raw) {
+    const blank = t => ' '.repeat(t.length);
+    let m = String(raw);
+    m = m.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, blank);
+    // 开标签被吃掉、只剩收尾标签的情况：它之前的全盖掉
+    const mc = m.match(/<\/think(?:ing)?>/i);
+    if (mc) { const end = m.indexOf(mc[0]) + mc[0].length; m = blank(m.slice(0, end)) + m.slice(end); }
+    m = m.replace(/<!--[\s\S]*?-->/g, blank);
+    return m;
+}
+// 在正文区域里找块，返回真实下标，内容从原文按下标取
+function findPhoneBlocks(raw) {
+    const masked = maskNonStory(raw);
+    const out = []; let m;
+    PHONE_BLOCK_RE.lastIndex = 0;
+    while ((m = PHONE_BLOCK_RE.exec(masked)) !== null) {
+        const text = raw.slice(m.index, m.index + m[0].length);
+        // 保险：一个手机块里不可能出现这些结构标签。出现了就是匹配跑偏了
+        // （比如从思维链里那句"需生成 [手机|状态|时间]"一路吃到正文的 [/手机]），
+        // 这种宁可不处理，也不能把人家正文吃掉。
+        if (/<\/think(?:ing)?>|<\/?content>|<顶栏>|\[V9_DAILY|<\/?DRAFT/i.test(text)) {
+            console.warn(`[${MODULE_NAME}] 有个 [手机] 块跨到正文结构外面去了，跳过不处理。开头：`, text.slice(0, 80));
+        } else {
+            out.push({ index: m.index, length: m[0].length, status: (m[1] || '').trim(), body: m[3], text });
+        }
+        if (m.index === PHONE_BLOCK_RE.lastIndex) PHONE_BLOCK_RE.lastIndex++;
+    }
+    return out;
+}
+// 按下标切掉，不用 replace——正则重扫可能又匹配到别处
+function cutRanges(raw, ranges) {
+    let out = '', pos = 0;
+    for (const r of ranges) { out += raw.slice(pos, r.index); pos = r.index + r.length; }
+    return out + raw.slice(pos);
+}
+
 // 把一个块里的行拆成消息
 function parseBlockLines(body, existing) {
     const out = [];
@@ -716,8 +755,7 @@ async function pickupFromMainline(mesId) {
     const raw = String(msg.mes || '');
     if (!/\[\/手机\]/.test(raw)) return;
 
-    PHONE_BLOCK_RE.lastIndex = 0;
-    const blocks = Array.from(raw.matchAll(PHONE_BLOCK_RE));
+    const blocks = findPhoneBlocks(raw);
     if (!blocks.length) return;
 
     const picked = pickedSet();
@@ -726,33 +764,33 @@ async function pickupFromMainline(mesId) {
     let added = 0, status = '';
 
     for (const b of blocks) {
-        const key = hashStr(b[0]);
+        const key = hashStr(b.text);
         if (picked[key]) continue;          // swipe 重roll 过来的同一段，别吸第二遍
         picked[key] = 1;
-        if (b[1] && b[1].trim()) status = b[1].trim();
-        for (const row of parseBlockLines(b[3], list)) {
+        if (b.status) status = b.status;
+        for (const row of parseBlockLines(b.body, list)) {
             const item = { id: genId(), role: row.role, text: row.text, ts: Date.now(), fromStory: true };
             list.push(item); added++;
         }
     }
-    if (!added) { await maybeStripBlocks(mesId, msg, raw); return; }
+    if (!added) { await maybeStripBlocks(mesId, msg, raw, blocks); return; }
 
     if (status) ct.statusText = ct.statusText || '';   // 状态只用于当次显示，不落库
     const inRoom = state.panelOpen && state.activeId === CHAR_ID && state.view === 'room';
     if (inRoom) { loadHistory(); if (status) setStatus(status); }
     else { ct.unread = (ct.unread || 0) + added; recountBadge(); }
 
-    await maybeStripBlocks(mesId, msg, raw);
+    await maybeStripBlocks(mesId, msg, raw, blocks);
     await persist(); renderChatList(); refreshInjection();
     console.log(`[${MODULE_NAME}] 从正文吸走 ${added} 条手机消息`);
     toast('info', `手机里来了 ${added} 条新消息`);
 }
 
 // 把正文里那段抹掉（内容已经存进手机了，不会丢）
-async function maybeStripBlocks(mesId, msg, raw) {
+async function maybeStripBlocks(mesId, msg, raw, blocks) {
     const s = getSettings(); if (!s.pickupStrip) return;
-    PHONE_BLOCK_RE.lastIndex = 0;
-    let cleaned = raw.replace(PHONE_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+    if (!blocks || !blocks.length) return;
+    let cleaned = cutRanges(raw, blocks).replace(/\n{3,}/g, '\n\n').trim();
     if (cleaned === raw.trim()) return;
     if (!cleaned) cleaned = '*📱 手机上来了条消息*';
     msg.mes = cleaned;
@@ -1811,7 +1849,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.0 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.13.1 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
