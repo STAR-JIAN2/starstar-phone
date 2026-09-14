@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.4
+ * v0.15.5
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -87,7 +87,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     storyTime: true,                                     // 手机里显示剧情时间（AI 报的），关了就用现实时间
     crossMemory: true,                                   // 群聊记得私聊、私聊记得群聊
     crossCount: 6,                                       // 交叉带过去几条
-    tellStickers: true,                                  // 把表情清单告诉 AI（角色卡里已经列过就可以关）
+    tellStickers: 'all',                                 // 告诉 AI 哪些表情可用：all 全部 / custom 只补自定义 / off 不说
 });
 
 const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0, queue: [] };
@@ -143,7 +143,17 @@ function sv(key) {
 function allStickers() { const cs = getSettings().customStickers; return { ...STICKERS, ...(cs && typeof cs === 'object' ? cs : {}) }; }
 // 喂给 AI 的表情清单。不给的话它只能瞎编，编出来的名字对不上就渲染成一行文字。
 function stickerListForPrompt() {
-    if (!getSettings().tellStickers) return '';
+    const s = getSettings();
+    // 老版本存的是 true/false，兼容一下
+    const mode = s.tellStickers === true ? 'all' : (s.tellStickers === false ? 'off' : (s.tellStickers || 'all'));
+    if (mode === 'off') return '';
+    // 只补自定义：角色卡里通常已经列了内置那批，这里只说卡里不可能知道的
+    if (mode === 'custom') {
+        const cs = s.customStickers || {};
+        const names = Object.keys(cs);
+        if (!names.length) return '';
+        return `\n\n【除了角色卡里列的那些，还可以发这几个表情】\n${names.join('、')}\n发法一样，单独一行写 [名字]。`;
+    }
     const names = Object.keys(allStickers());
     if (!names.length) return '';
     return `\n\n【可以发的表情】\n${names.join('、')}\n想发表情就单独一行写 [名字]，名字必须是上面列表里的原话。不要自己编表情，也不要写成"表情包：xxx.jpg"这种。`;
@@ -1713,7 +1723,8 @@ function applySettings() {
     const lsw = q('#tp-set-live'); if (lsw) lsw.classList.toggle('on', !!s.liveInject);
     const tsw = q('#tp-set-storytime'); if (tsw) tsw.classList.toggle('on', !!s.storyTime);
     const csw = q('#tp-set-cross'); if (csw) csw.classList.toggle('on', !!s.crossMemory);
-    const ksw = q('#tp-set-tellstickers'); if (ksw) ksw.classList.toggle('on', !!s.tellStickers);
+    const ksw = q('#tp-set-tellstickers');
+    if (ksw) ksw.value = s.tellStickers === true ? 'all' : (s.tellStickers === false ? 'off' : (s.tellStickers || 'all'));
     if (q('#tp-set-crosscount')) q('#tp-set-crosscount').value = s.crossCount || 6;
     if (q('#tp-set-livecount')) q('#tp-set-livecount').value = s.liveCount || 8;
     if (q('#tp-set-memtarget')) q('#tp-set-memtarget').value = s.memTarget || 'chat';
@@ -1748,6 +1759,7 @@ function saveFromForm() {
     if (q('#tp-set-utilprofile')) s.utilProfile = q('#tp-set-utilprofile').value;
     if (q('#tp-set-livecount')) s.liveCount = clamp(parseInt(q('#tp-set-livecount').value, 10) || 8, 1, 30);
     if (q('#tp-set-crosscount')) s.crossCount = clamp(parseInt(q('#tp-set-crosscount').value, 10) || 6, 1, 20);
+    if (q('#tp-set-tellstickers')) s.tellStickers = q('#tp-set-tellstickers').value;
     if (!s.actionIcons || typeof s.actionIcons !== 'object') s.actionIcons = {};
     for (const k of Object.keys(ACTION_ICONS)) { const el = q('#tp-ico-' + k); if (el) { const v = el.value.trim(); if (v) s.actionIcons[k] = v; else delete s.actionIcons[k]; } }
     saveSettings(); applySettings(); loadHistory();
@@ -1948,8 +1960,14 @@ function buildPanelHTML() {
                   <div class="tp-hint">时间看着乱了就点一下。已有消息先按现实时间显示，等 AI 下次报时间再重新对齐。消息内容不动。</div>
                 </div>
                 <div class="tp-hint">开着的话，你在手机上说的话不用等总结，主线立刻就知道，TA 在正文里能直接接上。</div>
-                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">把表情清单告诉 AI</label><div class="tp-switch" id="tp-set-tellstickers"></div></div></div>
-                <div class="tp-hint">开着 TA 才知道有哪些表情可发（含你自己加的）。如果你的角色卡里已经列过一份表情清单，可以关掉省点 token——但那样 TA 就不知道你新加的表情了。</div>
+                <div class="tp-set-group"><label class="tp-set-label">告诉 AI 有哪些表情</label>
+                  <select class="tp-set-input" id="tp-set-tellstickers">
+                    <option value="all">全部（内置 + 我加的）</option>
+                    <option value="custom">只补我加的（角色卡里已经列过内置的）</option>
+                    <option value="off">不说</option>
+                  </select>
+                </div>
+                <div class="tp-hint">不说的话 TA 只能瞎编表情名。如果你的角色卡里已经写了一份表情清单，选「只补我加的」最省——卡里那份管内置的，扩展只补卡不可能知道的自定义表情。<b>注意</b>：这只影响点 ➤ 让 TA 回复那条路；TA 在正文里主动发消息时用的是角色卡，所以卡里那份清单别删。</div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">群聊和私聊互相记得</label><div class="tp-switch" id="tp-set-cross"></div></div></div>
                 <div class="tp-set-group"><label class="tp-set-label">互相带过去几条</label><input class="tp-set-input" id="tp-set-crosscount" type="number" min="1" max="20"></div>
                 <div class="tp-hint">开着的话：拉群之前和 NPC 私聊过什么，群里的人记得；私聊时 TA 也记得群里发生的事。私聊内容会标明「只有当事人知道」，避免别人乱提。</div>
@@ -2062,7 +2080,6 @@ function bindEvents() {
     bindSwitch('tp-set-live', 'liveInject', refreshInjection);
     bindSwitch('tp-set-storytime', 'storyTime', () => { if (state.view === 'room') loadHistory(); renderChatList(); });
     bindSwitch('tp-set-cross', 'crossMemory');
-    bindSwitch('tp-set-tellstickers', 'tellStickers');
     document.getElementById('tp-time-reset').addEventListener('click', resetStoryClock);
 
     document.getElementById('tp-mem-now').addEventListener('click', () => summarizeAndFlow(true));
@@ -2152,7 +2169,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.4 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.5 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
