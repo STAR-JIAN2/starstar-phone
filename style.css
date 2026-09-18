@@ -1,6 +1,6 @@
 /* ============================================================
    星星小手机 · SillyTavern 扩展
-   v0.15.10
+   v0.15.11
    ============================================================ */
 
 @font-face {
@@ -61,7 +61,7 @@
 .tp-root img.sticker-img { max-width: 96px; max-height: 96px; display: block; }
 
 /* 旁白 */
-.tp-root .tp-narration { max-width: 88%; margin: 0 auto; font-size: 12px; line-height: 1.6; color: #9a8f92; text-align: center; font-style: italic; padding: 4px 12px; }
+.tp-root .tp-narration { max-width: 88%; margin: 0 auto; font-size: 12px; line-height: 1.6; color: #7d7276; text-align: center; font-style: italic; padding: 4px 12px; border-radius: 10px; background: rgba(255,255,255,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .tp-root .tp-narration::before { content: '「'; opacity: 0.5; }
 .tp-root .tp-narration::after { content: '」'; opacity: 0.5; }
 
@@ -69,7 +69,7 @@
 .tp-root .tp-recall { display: flex; justify-content: center; width: 100%; }
 .tp-root .recall-wrapper summary { list-style: none; cursor: pointer; outline: none; display: flex; align-items: center; justify-content: center; gap: 4px; }
 .tp-root .recall-wrapper summary::-webkit-details-marker { display: none; }
-.tp-root .system-tip { font-size: 11px; color: #9a9a9a; background: rgba(0,0,0,0.045); padding: 4px 12px; border-radius: 10px; }
+.tp-root .system-tip { font-size: 11px; color: #858585; background: rgba(255,255,255,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding: 4px 12px; border-radius: 10px; }
 .tp-root .tip-hint { font-size: 9px; opacity: 0.55; margin-left: 2px; }
 .tp-root .ghost-bubble { margin-top: 6px; font-size: 12px; color: #888; background: rgba(255,255,255,0.5); border: 1px dashed #ccc; padding: 6px 12px; border-radius: 8px; text-decoration: line-through; }
 
@@ -200,7 +200,8 @@
 .tp-root .tp-nav-item.active { color: #ff8fab; }
 
 /* 设置页 */
-.tp-root .tp-settings { flex: 1; overflow-y: auto; padding: 16px 18px; scrollbar-width: none; }
+.tp-root .tp-settings { flex: 1; overflow-y: auto; padding: 16px 18px; scrollbar-width: none; background: rgba(255,255,255,0.78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.tp-root .tp-range { width: 100%; margin: 6px 0 0; accent-color: #ff8fab; cursor: pointer; }
 .tp-root .tp-settings::-webkit-scrollbar { display: none; }
 .tp-root .tp-set-group { margin-bottom: 15px; }
 .tp-root .tp-set-label { font-family: 'XiaoLai', sans-serif; font-size: 12px; color: #8a7f82; margin-bottom: 6px; display: block; }
@@ -309,7 +310,7 @@
    ============================================================ */
 
 /* 聊天里的时间分隔 */
-.tp-root .tp-timestamp { align-self: center; margin: 8px 0 6px; padding: 2px 10px; border-radius: 10px; background: rgba(255,255,255,0.55); color: #a89ba0; font-size: 10px; font-family: 'XiaoLai', sans-serif; letter-spacing: 0.5px; flex-shrink: 0; }
+.tp-root .tp-timestamp { align-self: center; margin: 8px 0 6px; padding: 2px 10px; border-radius: 10px; background: rgba(255,255,255,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: #8f8286; font-size: 10px; font-family: 'XiaoLai', sans-serif; letter-spacing: 0.5px; flex-shrink: 0; }
 
 /* 会话列表 */
 .tp-root .tp-clist { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 0 10px; scrollbar-width: none; }
@@ -365,8 +366,8 @@
 .tp-root .tp-gtag { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 7px; background: rgba(255,143,171,0.16); color: #ff8fab; font-size: 9px; font-weight: normal; vertical-align: middle; }
 
 /* 群里气泡上方的说话人 */
-.tp-root .tp-speaker { font-size: 9px; color: #a89ba0; margin: 0 0 3px 4px; font-family: 'XiaoLai', sans-serif; }
-.tp-root .msg-row.right .tp-speaker { text-align: right; margin: 0 4px 3px 0; }
+.tp-root .tp-speaker { display: table; font-size: 9px; color: #8f8286; margin: 0 0 3px 4px; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-family: 'XiaoLai', sans-serif; }
+.tp-root .msg-row.right .tp-speaker { text-align: right; margin: 0 4px 3px auto; }
 
 /* ＋ 里的两个选项 */
 .tp-root .tp-add-opt { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 8px; border-radius: 13px; background: rgba(255,240,244,0.85); border: 1px solid rgba(255,143,171,0.28); font-family: 'XiaoLai', sans-serif; font-size: 13px; color: #6C7275; cursor: pointer; transition: transform 0.12s, background 0.15s; }

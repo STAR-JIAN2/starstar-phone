@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.10
+ * v0.15.11
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -73,6 +73,7 @@ const STICKERS = {
 
 const DEFAULT_SETTINGS = Object.freeze({
     charAvatar: DEFAULT_CHAR_AVATAR, userAvatar: DEFAULT_USER_AVATAR, wallpaper: DEFAULT_WALLPAPER,
+    wallDim: 0,                                          // 壁纸蒙层：盖一层 0~60% 的白，壁纸太花太暗时字更清楚
     font: 'default', narration: false, statusText: '在线', globalEnabled: true, fabX: null, fabY: null,
     memEnabled: true, memTarget: 'chat', memEvery: 6,   // 记忆回流：开关 / 目标世界书 / 每几条总结
     customStickers: {},                                  // 自定义表情：{名字: 图片URL}
@@ -111,7 +112,7 @@ function saveSettings() { ctx().saveSettingsDebounced(); }
 /* ---------- 分层：这张卡的设置 vs 所有卡通用 ----------
    TA 的头像/壁纸/朋友圈封面/在线状态/旁白，每张角色卡各存一份，
    免得在 A 卡换了头像，B 卡也跟着变。 */
-const PER_CHAR_KEYS = Object.freeze(['charAvatar', 'wallpaper', 'momentsCover', 'statusText', 'narration']);
+const PER_CHAR_KEYS = Object.freeze(['charAvatar', 'wallpaper', 'wallDim', 'momentsCover', 'statusText', 'narration']);
 // 用角色卡的文件名当标识（酒馆里这个最稳），拿不到就退回名字
 function charKey() {
     try {
@@ -206,6 +207,10 @@ function ctAvatarHTML(ct, cls) {
 function ctStatusLine(ct) { return isGroup(ct) ? `${groupMembers(ct).length} 人` : ctStatus(ct); }
 function ctUserAvatar(ct) { return (ct && ct.userAvatar) || getSettings().userAvatar; }
 function ctWallpaper(ct) { return (ct && ct.wallpaper) || sv('wallpaper'); }
+// 蒙层百分比。null/空＝跟着这张卡
+function normDim(v) { if (v === '' || v == null) return null; const n = parseInt(v, 10); return Number.isFinite(n) ? clamp(n, 0, 60) : null; }
+function cardWallDim() { return normDim(sv('wallDim')) || 0; }
+function ctWallDim(ct) { const own = ct ? normDim(ct.wallDim) : null; return own != null ? own : cardWallDim(); }
 // TA 自己报的状态压在最上面；你在专属设置里手动填的是底下那层，不会被吃掉
 function ctStatus(ct) { return (ct && ct.liveStatus) || (ct && ct.statusText) || sv('statusText'); }
 function ctNarration(ct) { return (ct && ct.narration != null) ? !!ct.narration : !!sv('narration'); }
@@ -261,7 +266,7 @@ function buildCardPreset() {
     for (const ct of contacts()) {
         const o = {
             id: ct.id, name: ct.name || '', avatar: ct.avatar || '',
-            wallpaper: ct.wallpaper || '', statusText: ct.statusText || '',
+            wallpaper: ct.wallpaper || '', wallDim: normDim(ct.wallDim), statusText: ct.statusText || '',
             narration: ct.narration == null ? null : !!ct.narration,
         };
         if (isGroup(ct)) { o.type = 'group'; o.members = (ct.members || []).slice(); }
@@ -269,6 +274,7 @@ function buildCardPreset() {
         if (ct.id === CHAR_ID) {   // 主角色这条把当前实际生效的值写死，别人那边才看得到你调的样子
             o.avatar = ct.avatar || sv('charAvatar');
             o.wallpaper = ct.wallpaper || sv('wallpaper');
+            o.wallDim = ctWallDim(ct);
             o.statusText = ct.statusText || sv('statusText');
             if (o.narration == null) o.narration = !!sv('narration');
         }
@@ -304,7 +310,7 @@ function seedFromCard(force) {
     const base = p.contacts.find(x => x && x.id === CHAR_ID) || {};
     seeded.push({
         id: CHAR_ID, name: '', avatar: base.avatar || '', persona: '',
-        statusText: base.statusText || '', wallpaper: base.wallpaper || '', userAvatar: '',
+        statusText: base.statusText || '', wallpaper: base.wallpaper || '', wallDim: normDim(base.wallDim), userAvatar: '',
         narration: base.narration == null ? null : !!base.narration, unread: 0, createdAt: Date.now(),
     });
     for (const x of p.contacts) {
@@ -312,7 +318,7 @@ function seedFromCard(force) {
         seeded.push({
             id: x.id, type: x.type === 'group' ? 'group' : undefined,
             name: x.name || '', avatar: x.avatar || '', persona: x.persona || '',
-            statusText: x.statusText || '', wallpaper: x.wallpaper || '', userAvatar: '',
+            statusText: x.statusText || '', wallpaper: x.wallpaper || '', wallDim: normDim(x.wallDim), userAvatar: '',
             members: x.type === 'group' ? (x.members || []).slice() : undefined,
             narration: x.narration == null ? null : !!x.narration, unread: 0, createdAt: Date.now(),
         });
@@ -1569,7 +1575,11 @@ function applyWallpaper() {
     const wl = document.querySelector('#tp-panel .wallpaper-layer'); if (!wl) return;
     const inRoom = state.tab === 'chat' && (state.view === 'room' || state.view === 'cset');
     const url = inRoom ? ctWallpaper(activeContact()) : sv('wallpaper');
-    wl.style.backgroundImage = `url('${url}')`;
+    const a = (inRoom ? ctWallDim(activeContact()) : cardWallDim()) / 100;
+    // 蒙层直接叠在同一层背景上，不多加节点
+    wl.style.backgroundImage = a > 0
+        ? `linear-gradient(rgba(255,255,255,${a}), rgba(255,255,255,${a})), url('${url}')`
+        : `url('${url}')`;
 }
 
 /* ---------- 新建联系人 ---------- */
@@ -1656,6 +1666,7 @@ function loadCSetForm() {
     if (q('#tp-cs-avatar')) { q('#tp-cs-avatar').value = ct.avatar || ''; q('#tp-cs-avatar').placeholder = isChar ? '留空＝用这张卡的 TA 头像' : (grp ? '留空＝用成员头像拼一个' : '留空＝用默认头像'); }
     if (q('#tp-cs-user')) q('#tp-cs-user').value = ct.userAvatar || '';
     if (q('#tp-cs-wall')) q('#tp-cs-wall').value = ct.wallpaper || '';
+    if (q('#tp-cs-dim')) { const d = normDim(ct.wallDim); q('#tp-cs-dim').value = d == null ? '' : d; q('#tp-cs-dim').placeholder = `留空＝跟这张卡（现在 ${cardWallDim()}）`; }
     if (q('#tp-cs-status')) q('#tp-cs-status').value = ct.statusText || '';
     const ls = q('#tp-cs-livestatus');
     if (ls) {
@@ -1679,6 +1690,7 @@ function saveCSet() {
     ct.avatar = val('#tp-cs-avatar');
     ct.userAvatar = val('#tp-cs-user');
     ct.wallpaper = val('#tp-cs-wall');
+    ct.wallDim = normDim(val('#tp-cs-dim'));
     ct.statusText = val('#tp-cs-status');
     ct.liveStatus = '';        // 你手动设了就以你的为准，把 TA 自己改的清掉
     ct.persona = q('#tp-cs-persona') ? q('#tp-cs-persona').value.trim() : '';
@@ -1789,6 +1801,7 @@ function applySettings() {
     if (q('#tp-set-char')) q('#tp-set-char').value = sv('charAvatar');
     if (q('#tp-set-user')) q('#tp-set-user').value = s.userAvatar;
     if (q('#tp-set-wall')) q('#tp-set-wall').value = sv('wallpaper');
+    { const d = cardWallDim(); if (q('#tp-set-dim')) q('#tp-set-dim').value = d; if (q('#tp-set-dim-v')) q('#tp-set-dim-v').textContent = d + '%'; }
     if (q('#tp-set-cover')) q('#tp-set-cover').value = sv('momentsCover');
     if (q('#tp-set-status')) q('#tp-set-status').value = sv('statusText');
     if (q('#tp-set-font')) q('#tp-set-font').value = s.font;
@@ -1966,6 +1979,7 @@ function buildPanelHTML() {
                   <div class="tp-set-group"><label class="tp-set-label">TA 的头像链接</label><input class="tp-set-input" id="tp-cs-avatar"></div>
                   <div class="tp-set-group"><label class="tp-set-label">我在这个聊天里的头像</label><input class="tp-set-input" id="tp-cs-user" placeholder="留空＝用通用设置里的"></div>
                   <div class="tp-set-group"><label class="tp-set-label">这个聊天的壁纸</label><input class="tp-set-input" id="tp-cs-wall" placeholder="留空＝用这张卡的壁纸"></div>
+                  <div class="tp-set-group"><label class="tp-set-label">壁纸蒙层（0～60，越大壁纸越淡）</label><input class="tp-set-input" id="tp-cs-dim" type="number" min="0" max="60" step="5"></div>
                   <div class="tp-set-group" id="tp-cs-status-group"><label class="tp-set-label">TA 的在线状态</label><input class="tp-set-input" id="tp-cs-status" placeholder="留空＝用这张卡的设置"><div class="tp-hint" id="tp-cs-livestatus"></div></div>
                   <div class="tp-set-group" id="tp-cs-members-group"><label class="tp-set-label">群成员</label><div class="tp-pick-box" id="tp-cs-members"></div></div>
                   <div class="tp-set-group"><label class="tp-set-label">旁白模式</label>
@@ -2009,6 +2023,8 @@ function buildPanelHTML() {
                 <div class="tp-mem-divider">🎴 这张卡的设置 · 只影响「<span id="tp-set-cardname">这张卡</span>」</div>
                 <div class="tp-set-group"><label class="tp-set-label">TA 的头像链接</label><input class="tp-set-input" id="tp-set-char"></div>
                 <div class="tp-set-group"><label class="tp-set-label">聊天壁纸链接</label><input class="tp-set-input" id="tp-set-wall"></div>
+                <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">壁纸蒙层</label><span class="tp-set-label" style="margin:0;" id="tp-set-dim-v">0%</span></div><input type="range" class="tp-range" id="tp-set-dim" min="0" max="60" step="5">
+                  <div class="tp-hint">换了张太花、太暗的壁纸，字看不清就往右拉，给壁纸盖一层白。拖的时候就能看到效果，不用点保存。</div></div>
                 <div class="tp-set-group"><label class="tp-set-label">朋友圈封面链接</label><input class="tp-set-input" id="tp-set-cover"></div>
                 <div class="tp-set-group"><label class="tp-set-label">TA 的在线状态</label><input class="tp-set-input" id="tp-set-status" placeholder="在线 / 想你中 / 学习中…"></div>
                 <div class="tp-set-group"><div class="tp-set-row"><label class="tp-set-label" style="margin:0;">默认旁白模式</label><div class="tp-switch" id="tp-set-narr"></div></div></div>
@@ -2141,6 +2157,11 @@ function bindEvents() {
     panel.querySelectorAll('.tp-nav-item').forEach(el => el.addEventListener('click', () => switchTab(el.dataset.tab)));
     document.getElementById('tp-save').addEventListener('click', saveFromForm);
     document.getElementById('tp-set-narr').addEventListener('click', function () { const pc = charSet(); pc.narration = !sv('narration'); this.classList.toggle('on', !!pc.narration); saveSettings(); applySettings(); });
+    document.getElementById('tp-set-dim').addEventListener('input', function () {
+        const d = normDim(this.value) || 0; charSet().wallDim = d;
+        const v = document.getElementById('tp-set-dim-v'); if (v) v.textContent = d + '%';
+        saveSettings(); applyWallpaper();
+    });
     document.getElementById('tp-set-mem').addEventListener('click', function () { const s = getSettings(); s.memEnabled = !s.memEnabled; this.classList.toggle('on', s.memEnabled); saveSettings(); });
     // 几个全局开关
     const bindSwitch = (id, key, after) => {
@@ -2248,7 +2269,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.10 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.11 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
