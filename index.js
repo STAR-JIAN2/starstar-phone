@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.8
+ * v0.15.9
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -497,6 +497,13 @@ function renderInline(raw, isUser) {
 function contentToHtml(content, isUser) {
     let c = String(content).trim(); if (!c) return null;
     const bubbleClass = isUser ? 'bubble-pink' : 'bubble-blue';
+    // 老版本在块没收尾时会把标记原样存下来，这里兜住：
+    // [手机|…] [/手机] 和复述用的 [我|…] 不显示，[对|xxx] 按 xxx 显示
+    if (/^\[\/?手机(\|[^\]]*)?\]$/.test(c)) return null;
+    if (!isUser && /^\[我\|[\s\S]*\]$/.test(c)) return null;
+    const dui = c.match(/^\[对\|([\s\S]*)\]$/);
+    if (dui) c = dui[1].trim();
+    if (!c) return null;
     let inner = c; const w = c.match(/^\[([\s\S]*)\]$/); if (w) inner = w[1].trim();
     if (/^旁白[：:]/.test(inner)) return { kind: 'narration', html: `<div class="tp-narration">${esc(inner.replace(/^旁白[：:]\s*/, ''))}</div>` };
     if (/^撤回[：:]/.test(inner)) return { kind: 'system', html: renderInline(`[${inner}]`, isUser) };
@@ -677,7 +684,14 @@ function parseCharPayload(raw) {
             if (m) { const t = m[1].trim(); if (t) items.push(t); }
         });
     } else {
+        // 没有完整的块：可能是普通纯文本回复，也可能是模型漏写了收尾的 [/手机]。
+        // 逐行认格式，别把 [手机|…] [我|…] [对|…] 这些标记原样当消息存进去。
         String(raw).split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+            const hd = line.match(/^\[手机(?:\|([^|\]]*))?(?:\|([^|\]]*))?\]$/);
+            if (hd) { status = (hd[1] || '').trim() || status; time = (hd[2] || '').trim() || time; return; }
+            if (/^\[\/手机\]$/.test(line)) return;
+            const pm = parseMsgLine(line);
+            if (pm) { if (pm.role !== 'user') items.push(pm.text); return; }   // [我|…] 是复述，丢掉
             let l = line;
             if (ta && (l.startsWith(ta + '：') || l.startsWith(ta + ':'))) l = l.slice(ta.length + 1).trim();
             if (l) items.push(l);
@@ -2212,7 +2226,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.8 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.9 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
