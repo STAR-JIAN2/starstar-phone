@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.7
+ * v0.15.8
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -448,7 +448,9 @@ function renderInline(raw, isUser) {
 
     for (const [name, url] of Object.entries(allStickers())) {
         const safe = name.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        html = html.replace(new RegExp(`\\[${safe}\\]`, 'g'), `<img src="${esc(url)}" class="sticker-img" style="vertical-align:middle;display:inline-block;">`);
+        // 夹在句子里的 [害羞] 多半是 AI 给普通词加了括号（"你[害羞]的时候"），
+        // 当成字显示；真要发表情会单独成条，由 splitStickerEdges 拆出来。
+        html = html.replace(new RegExp(`\\[(?:\\d+\\.)?${safe}\\]`, 'g'), esc(name));
     }
     html = html.replace(/\[语音[：:]\s*(.*?)\]/g, (m, c) => {
         const p = c.split(/[|｜]/); let dur = '10"', txt = '（点击播放语音）';
@@ -501,7 +503,9 @@ function contentToHtml(content, isUser) {
     if (/^(语音|定位|天气|链接|图片|外卖|代付|转账)[：:]/.test(inner)) return { kind: 'component', html: renderInline(`[${inner}]`, isUser) };
     const name = inner.replace(/^\d+\./, '');
     const AS = allStickers();
-    if (AS[name]) return { kind: 'sticker', html: `<img src="${esc(AS[name])}" class="sticker-img">` };
+    // 只有 [抱抱]（带括号）或 1.害羞（正则规则里的编号写法）才算表情。
+    // 光秃秃一句「晚安」「吃饭」就是字——很多表情名本身就是日常用语。
+    if ((w || /^\d+\./.test(inner)) && AS[name]) return { kind: 'sticker', html: `<img src="${esc(AS[name])}" class="sticker-img">` };
     // AI 常写成「表情包：摸头.jpg」「[表情：抱抱]」这种，扒掉外壳再查一次
     const alt = name
         .replace(/^(表情包|表情|贴图|sticker)\s*[：:]\s*/i, '')
@@ -606,7 +610,7 @@ const UTIL_GUARD = '【系统工具调用 · 不是剧情续写】\n忽略任何
 
 /* ---------- 渲染 ---------- */
 function chatArea() { return document.querySelector('#tp-panel .chat-area'); }
-function appendRow(isUser, r, mid, who) {
+function appendRow(isUser, r, mid, who, noTag) {
     const area = chatArea(); if (!area || !r) return;
     const midAttr = mid != null ? String(mid) : '';
     const del = mid != null ? `<div class="tp-del" data-del="${midAttr}" title="删除这条">✕</div>` : '';
@@ -617,15 +621,34 @@ function appendRow(isUser, r, mid, who) {
         const speaker = (!isUser && who) ? contactById(who) : null;
         const av = isUser ? ctUserAvatar(ct) : (speaker ? ctAvatar(speaker) : ctAvatar(ct));
         // 群里才在气泡上方标名字
-        const tag = (!isUser && speaker && isGroup(ct)) ? `<div class="tp-speaker">${esc(ctName(speaker))}</div>` : '';
+        const tag = (!noTag && !isUser && speaker && isGroup(ct)) ? `<div class="tp-speaker">${esc(ctName(speaker))}</div>` : '';
         area.insertAdjacentHTML('beforeend', `<div class="tp-line msg-row ${side}" data-mid="${midAttr}"><img class="tp-avatar" src="${esc(av)}"><div class="msg-inner">${tag}${r.html}</div>${del}</div>`);
     }
     area.scrollTop = area.scrollHeight;
 }
+// 「好啦[抱抱]」「[亲亲]晚安」：开头结尾的表情拆出来单独显示，别和文字挤在一个气泡里
+function splitStickerEdges(text) {
+    const AS = allStickers();
+    const isSt = n => !!AS[String(n).replace(/^\d+\./, '').trim()];
+    let rest = String(text).trim();
+    const lead = [], trail = [];
+    let m;
+    while ((m = rest.match(/^\[([^\[\]\n]+)\]\s*/)) && isSt(m[1]) && rest.length > m[0].length) {
+        lead.push(`[${m[1]}]`); rest = rest.slice(m[0].length).trim();
+    }
+    while ((m = rest.match(/\s*\[([^\[\]\n]+)\]$/)) && isSt(m[1]) && rest.length > m[0].length) {
+        trail.unshift(`[${m[1]}]`); rest = rest.slice(0, rest.length - m[0].length).trim();
+    }
+    return lead.concat(rest ? [rest] : [], trail);
+}
 function renderOne(isUser, text, mid, ts, who, nowRef) {
-    const r = contentToHtml(text, isUser); if (!r) return;
-    maybeStamp(ts, nowRef);
-    appendRow(isUser, r, mid, who);
+    let first = true;
+    for (const part of splitStickerEdges(text)) {
+        const r = contentToHtml(part, isUser); if (!r) continue;
+        if (first) maybeStamp(ts, nowRef);
+        appendRow(isUser, r, mid, who, !first);   // 群里的名字只标第一截
+        first = false;
+    }
 }
 // 距上一条超过 5 分钟（或是第一条）就插一条居中时间
 function maybeStamp(ts, nowRef) {
@@ -2189,7 +2212,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.7 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.8 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
