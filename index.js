@@ -1,7 +1,7 @@
 /* ============================================================
  * 星星小手机 · SillyTavern 扩展
  * 会话列表 / 多 NPC / 群聊 / 朋友圈 / 分层设置 / 记忆回流
- * v0.15.9
+ * v0.15.10
  * ============================================================ */
 
 const MODULE_NAME = 'tavern_phone';
@@ -90,7 +90,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     tellStickers: 'all',                                 // 告诉 AI 哪些表情可用：all 全部 / custom 只补自定义 / off 不说
 });
 
-const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0, queue: [], epoch: 0 };
+const state = { panelOpen: false, badge: 0, generating: false, summarizing: false, tab: 'chat', view: 'list', activeId: CHAR_ID, lastStamp: 0, queue: [], epoch: 0, genFor: null, genStart: 0 };
 
 /* ---------- 基础 ---------- */
 function ctx() { return window.SillyTavern.getContext(); }
@@ -593,7 +593,7 @@ async function utilGenerate(prompt, maxTokens) {
             console.warn(`[${MODULE_NAME}] 干净通道返回空，退回默认通道`);
         } catch (e) { console.warn(`[${MODULE_NAME}] 干净通道失败，退回默认通道`, e); }
     }
-    return await c.generateQuietPrompt({ quietPrompt: prompt, skipWIAN: true, responseLength: cap });
+    return await quietGen({ quietPrompt: prompt, skipWIAN: true, responseLength: cap });
 }
 // 一眼能看出是预设接管了的特征
 function looksHijacked(t) {
@@ -780,6 +780,7 @@ function loadHistory() {
     const storyRef = storyNow();
     // 有剧情时间的按剧情里的今天算，老消息还按现实时间算，各归各的
     for (const m of list) renderOne(m.role === 'user', m.text, m.id, msgTime(m), m.who, m.st ? (storyRef || m.st) : Date.now());
+    if (state.generating && state.genFor === (state.activeId || CHAR_ID)) showTyping();   // 切回来还在等，点点点接着显示
 }
 
 /* ---------- typing ---------- */
@@ -791,6 +792,33 @@ function showTyping() {
     a.scrollTop = a.scrollHeight;
 }
 function hideTyping() { const t = document.getElementById('tp-typing'); if (t) t.remove(); }
+
+/* ---------- 生成兜底 ----------
+   强预设＋推理模型一次能写一两分钟，偶尔还会整个挂住不返回。挂住的话 generating
+   永远不复位，之后点什么都没反应，只能刷新。所以包一层超时：到点了停掉酒馆的生成、
+   复位状态，让用户能重来。 */
+const GEN_TIMEOUT = 5 * 60 * 1000;
+async function quietGen(opts) {
+    const c = ctx(); let timer;
+    const timeout = new Promise((_, rej) => {
+        timer = setTimeout(() => {
+            try { if (typeof c.stopGeneration === 'function') c.stopGeneration(); } catch (e) { /* 停不掉也要复位 */ }
+            rej(new Error('tp-timeout'));
+        }, GEN_TIMEOUT);
+    });
+    try { return await Promise.race([c.generateQuietPrompt(opts), timeout]); }
+    finally { clearTimeout(timer); }
+}
+const isTimeout = e => e && e.message === 'tp-timeout';
+const genFailMsg = e => isTimeout(e) ? '等了5分钟都没回，已经停掉了，再点一次 ➤ 试试' : '生成失败，看看酒馆是否已连接API';
+// 忙的时候再点 ➤：告诉用户在干嘛，别静默
+function busyReply(id, ct) {
+    if (state.summarizing) { toast('info', '正在把记忆回流到主线，完了就轮到TA～'); queueReply(id); return; }
+    const sec = Math.round((Date.now() - state.genStart) / 1000);
+    if (state.genFor === id) { toast('info', `${ctName(ct)}正在想怎么回你…已经等了${sec}秒`); return; }
+    if (queueReply(id)) toast('info', `TA还在回复，${ctName(ct)}这条排在后面了`);
+    else toast('info', `${ctName(ct)}这条已经在排队了，前面那个等了${sec}秒`);
+}
 
 /* ---------- 发送 / 催回复 ---------- */
 function pushUser(text) {
@@ -821,13 +849,10 @@ async function askReply(targetId) {
     const id = targetId || state.activeId || CHAR_ID;
     const ct = contactById(id);
     if (isGroup(ct)) return askGroupReply(id);
-    if (state.generating || state.summarizing) {
-        if (queueReply(id)) toast('info', `TA还在回复，${ctName(ct)}这条排在后面了`);
-        return;
-    }
+    if (state.generating || state.summarizing) { busyReply(id, ct); return; }
     const c = ctx(); const list = chatOf(id);
     if (!list.length) { toast('info', '先发条消息给TA吧～'); return; }
-    state.generating = true; if (roomVisible(id)) showTyping();
+    state.generating = true; state.genFor = id; state.genStart = Date.now(); if (roomVisible(id)) showTyping();
     const ep = state.epoch;
     const alive = () => state.epoch === ep;   // 中途换了酒馆聊天就作废
     let replied = false;
@@ -843,7 +868,7 @@ async function askReply(targetId) {
         (ct.persona ? `\n【${ta}的人设】\n${ct.persona}\n` : '');
     const quiet = `以下是${ta}和${me}正在用手机聊天的场景。${who}请只以${ta}的身份、用适合手机即时通讯的口吻回复${me}的最新消息。可以分多条，每条单独占一行。${narr}不要复述${me}说的话，不要加引号或旁白式叙述。${stickerListForPrompt()}${groupContext(ct)}\n\n【手机里最近的对话】\n${recent}\n\n【现在轮到${ta}回复】`;
     try {
-        const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
+        const raw = await quietGen({ quietPrompt: quiet });
         hideTyping();
         const text = stripPreset(raw);
         if (!alive()) { console.warn(`[${MODULE_NAME}] 生成期间换了聊天，这次回复丢弃`); return; }
@@ -877,9 +902,9 @@ async function askReply(targetId) {
         if (!visible()) { ct.unread = (ct.unread || 0) + 1; recountBadge(); }
         persist(); replied = true; renderChatList(); refreshInjection();
     } catch (e) {
-        hideTyping(); console.error(`[${MODULE_NAME}] 生成失败`, e); toast('error', '生成失败，看看酒馆是否已连接API');
+        hideTyping(); console.error(`[${MODULE_NAME}] 生成失败`, e); toast('error', genFailMsg(e));
     } finally {
-        state.generating = false; hideTyping();
+        state.generating = false; state.genFor = null; hideTyping();
         if (replied && isCharContact(ct)) maybeSummarize();
         drainQueue();
     }
@@ -889,15 +914,12 @@ async function askReply(targetId) {
 async function askGroupReply(targetId) {
     const id = targetId || state.activeId || CHAR_ID;
     const ct = contactById(id);
-    if (state.generating || state.summarizing) {
-        if (queueReply(id)) toast('info', `TA还在回复，${ctName(ct)}这条排在后面了`);
-        return;
-    }
+    if (state.generating || state.summarizing) { busyReply(id, ct); return; }
     const c = ctx(); const list = chatOf(id);
     const ms = groupMembers(ct);
     if (!ms.length) { toast('warning', '这个群里还没有人，去右上角 ⋯ 里加几个'); return; }
     if (!list.length) { toast('info', '先在群里说句话吧～'); return; }
-    state.generating = true; if (roomVisible(id)) showTyping();
+    state.generating = true; state.genFor = id; state.genStart = Date.now(); if (roomVisible(id)) showTyping();
     const ep = state.epoch;
     const alive = () => state.epoch === ep;   // 中途换了酒馆聊天就作废
     const me = (c.name1 || '我').trim();
@@ -911,7 +933,7 @@ async function askGroupReply(targetId) {
         : '不要写旁白、心理活动或动作描写，只发群里的聊天文字。';
     const quiet = `这是一个手机群聊「${ctName(ct)}」，${me}也在群里。\n\n【群成员】\n${roster}${privateContext(ct)}\n\n请让群里的人接${me}的话。可以只有一个人说，也可以几个人你一言我一语。总共 2 到 6 条。\n严格按这个格式，每行一条，名字必须是上面列出来的那几个：\n名字：内容\n${narr}\n不要替${me}说话，不要加引号。${stickerListForPrompt()}\n\n【群里最近的消息】\n${recent}\n\n【现在群里的人接话】`;
     try {
-        const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
+        const raw = await quietGen({ quietPrompt: quiet });
         hideTyping();
         const text = stripPreset(raw);
         if (!alive()) { console.warn(`[${MODULE_NAME}] 生成期间换了聊天，这次群聊回复丢弃`); return; }
@@ -933,8 +955,8 @@ async function askGroupReply(targetId) {
         if (!visible()) { ct.unread = (ct.unread || 0) + 1; recountBadge(); }
         persist(); renderChatList();
     } catch (e) {
-        hideTyping(); console.error(`[${MODULE_NAME}] 群聊生成失败`, e); toast('error', '生成失败，看看酒馆是否已连接API');
-    } finally { state.generating = false; hideTyping(); drainQueue(); }
+        hideTyping(); console.error(`[${MODULE_NAME}] 群聊生成失败`, e); toast('error', genFailMsg(e));
+    } finally { state.generating = false; state.genFor = null; hideTyping(); drainQueue(); }
 }
 
 // 手机里有任何变动都刷一次注入，让主线立刻跟上
@@ -1260,7 +1282,7 @@ function maybeSummarize() {
 async function summarizeAndFlow(manual = false) {
     const c = ctx(); const s = getSettings();
     if (!s.memEnabled && !manual) return;
-    if (state.generating || state.summarizing) { if (manual) toast('info', 'TA还在打字，稍等一下～'); return; }
+    if (state.generating || state.summarizing) { if (manual) toast('info', state.summarizing ? '已经在回流了，稍等～' : `TA还在打字（已经${Math.round((Date.now() - state.genStart) / 1000)}秒），回完再点～`); return; }
     const chatId = c.getCurrentChatId ? c.getCurrentChatId() : c.chatId;
     if (!chatId) { if (manual) toast('warning', '先打开一个聊天再回流哦'); return; }
 
@@ -1430,7 +1452,7 @@ async function charPostMoment() {
     const ta = charName(); state.generating = true; toast('info', `等${ta}发条朋友圈…`);
     const quiet = `请以${ta}的身份、符合当前剧情和${ta}的性格发一条朋友圈。可以配图，用[图片描述]表示（例如[窗外的雪]、[刚做好的晚饭]），也可以不配图。20到60字，口语、有生活感，别太正式。只输出朋友圈正文，不要引号、不要旁白、不要前后缀。`;
     try {
-        const raw = await c.generateQuietPrompt({ quietPrompt: quiet });
+        const raw = await quietGen({ quietPrompt: quiet });
         const text = stripPreset(raw).replace(/^["“』」]+|["”『「]+$/g, '').trim();
         if (!text) { toast('warning', '没拿到内容，检查下API？'); return; }
         if (looksHijacked(text) || text.length > 300) {
@@ -1450,7 +1472,7 @@ async function charReactMoment(id) {
     state.generating = true; toast('info', `等${ta}看一眼…`);
     const quiet = `以下是${me}发的一条朋友圈：\n正文：${caption || '（无文字）'}${imgs.length ? `\n配图：${imgs.join('、')}` : ''}\n\n请以${ta}的身份、按当前剧情和性格决定要不要点赞、要不要评论：\n- 要点赞就输出一行：[赞]\n- 要评论就输出一行：[评论：内容]\n- 可以只点赞、只评论、都做，或都不做（都不做就输出：[无]）\n只输出这些标记，不要别的。`;
     try {
-        const raw = await c.generateQuietPrompt({ quietPrompt: quiet }); const text = stripPreset(raw);
+        const raw = await quietGen({ quietPrompt: quiet }); const text = stripPreset(raw);
         let did = false;
         if (/\[赞\]/.test(text) && !m.likes.includes(ta)) { m.likes.push(ta); did = true; }
         const cc = text.match(/\[评论[：:]\s*([\s\S]*?)\]/);
@@ -2226,7 +2248,7 @@ function init() {
     });
     // 接口自检（打印到控制台，方便排查回流问题）
     const wiApi = ['loadWorldInfo', 'saveWorldInfo', 'getWorldInfoNames', 'updateWorldInfoList'].map(k => `${k}:${typeof c[k] === 'function' ? '✓' : '✗'}`).join(' ');
-    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.9 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
+    console.log(`[${MODULE_NAME}] 小手机已就位 🐰 v0.15.10 ｜ setExtensionPrompt:${typeof c.setExtensionPrompt === 'function' ? '✓' : '✗'} ｜ 写卡接口 writeExtensionField:${canWriteCard() ? '✓' : '✗'} ｜ 干净通道:${hasCleanChannel() ? `✓(${connProfiles().length}个配置)` : '✗'} ｜ 接管正文:${c.event_types.MESSAGE_RECEIVED ? '✓' : '✗'} ｜ 世界书接口 ${wiApi}`);
 }
 
 (function boot() {
