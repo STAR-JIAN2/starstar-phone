@@ -1,6 +1,6 @@
 /* ============================================================
    星星小手机 · SillyTavern 扩展
-   v0.15.11
+   v0.15.12
    ============================================================ */
 
 @font-face {
@@ -200,8 +200,14 @@
 .tp-root .tp-nav-item.active { color: #ff8fab; }
 
 /* 设置页 */
-.tp-root .tp-settings { flex: 1; overflow-y: auto; padding: 16px 18px; scrollbar-width: none; background: rgba(255,255,255,0.78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-.tp-root .tp-range { width: 100%; margin: 6px 0 0; accent-color: #ff8fab; cursor: pointer; }
+.tp-root .tp-settings { flex: 1; overflow-y: auto; padding: 16px 18px; scrollbar-width: none; }
+/* 设置页的字直接压在壁纸上：不垫底（壁纸要看得见），给一圈白色光晕 */
+.tp-root .tp-settings .tp-set-label, .tp-root .tp-settings .tp-hint, .tp-root .tp-settings .tp-mem-divider { text-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 5px rgba(255,255,255,0.9), 0 0 9px rgba(255,255,255,0.7) !important; }   /* 酒馆「无阴影」会用 !important 全关，这里是可读性要的，不跟 */
+/* 滑条：酒馆全局给 range 上了主题样式（轨道是主题文字色，常常看不见），这里整套自己画 */
+.tp-root input[type="range"].tp-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 6px; margin: 10px 0 2px; padding: 0; border: none; border-radius: 3px; background: rgba(255,143,171,0.35); box-shadow: 0 0 0 1px rgba(255,255,255,0.8); outline: none; cursor: pointer; filter: none; }
+.tp-root input[type="range"].tp-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid #ff8fab; box-shadow: 0 1px 4px rgba(255,143,171,0.5); cursor: pointer; }
+.tp-root input[type="range"].tp-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #ff8fab; box-shadow: 0 1px 4px rgba(255,143,171,0.5); cursor: pointer; }
+.tp-root input[type="range"].tp-range::-moz-range-track { height: 6px; border-radius: 3px; background: rgba(255,143,171,0.35); }
 .tp-root .tp-settings::-webkit-scrollbar { display: none; }
 .tp-root .tp-set-group { margin-bottom: 15px; }
 .tp-root .tp-set-label { font-family: 'XiaoLai', sans-serif; font-size: 12px; color: #8a7f82; margin-bottom: 6px; display: block; }
